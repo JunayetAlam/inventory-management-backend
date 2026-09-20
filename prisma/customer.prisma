@@ -3,8 +3,10 @@ model Customer {
   name                String
   countryCode         String    @default("+880")
   phoneNumber         String
+  whatsappNumber      String?
   email               String?
   address             String?
+  image               String?
   isDeleted           Boolean   @default(false)
 
   isDeleteRequested   Boolean   @default(false)
@@ -25,6 +27,7 @@ model Customer {
 
   @@unique([countryCode, phoneNumber])
   @@index([phoneNumber])
+  @@index([whatsappNumber])
   @@index([countryCode])
   @@index([name])
   @@index([isDeleted])

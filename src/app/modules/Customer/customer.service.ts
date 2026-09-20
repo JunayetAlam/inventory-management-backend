@@ -13,6 +13,8 @@ import {
   attachCustomerFinancials,
   computeCustomersFinancials,
 } from './customer.utils';
+import { deleteFromLocalStorage } from '../Upload/uploadToLocalStorage';
+import { deleteFromCloudinary } from '../Upload/uploadToCloudinary';
 
 const createCustomer = catchAsync(async (req, res) => {
   const actor = req.user;
@@ -33,13 +35,19 @@ const createCustomer = catchAsync(async (req, res) => {
 
   if (existing) {
     if (existing.isDeleted) {
-      // Reactivate previously deleted customer with new name/address/email
+      // Reactivate previously deleted customer with new name/address/email/image
+      const previousImage = existing.image;
+      const isImageChanging =
+        payload.image !== undefined && payload.image !== previousImage;
+
       const restored = await prisma.customer.update({
         where: { id: existing.id },
         data: {
           name: payload.name.trim(),
           email: payload.email !== undefined ? (payload.email || null) : existing.email,
           address: payload.address !== undefined ? (payload.address || null) : existing.address,
+          whatsappNumber: payload.whatsappNumber !== undefined ? (payload.whatsappNumber?.trim() || null) : existing.whatsappNumber,
+          image: payload.image !== undefined ? (payload.image || null) : existing.image,
           isDeleted: false,
           isDeleteRequested: false,
           deleteReason: null,
@@ -59,6 +67,14 @@ const createCustomer = catchAsync(async (req, res) => {
         },
       });
 
+      // Delete previous image from storage only after successful DB update
+      if (isImageChanging && previousImage) {
+        deleteFromLocalStorage(previousImage);
+        if (typeof previousImage === 'string' && previousImage.includes('cloudinary.com')) {
+          deleteFromCloudinary(previousImage);
+        }
+      }
+
       logActivity({
         userId: actor.id,
         action: 'RESTORE_CUSTOMER',
@@ -68,6 +84,8 @@ const createCustomer = catchAsync(async (req, res) => {
         details: {
           name: restored.name,
           phoneNumber: restored.phoneNumber,
+          whatsappNumber: restored.whatsappNumber,
+          image: restored.image,
           source: 'REACTIVATE_ON_CUSTOMER_CONFIRM',
         },
       });
@@ -91,8 +109,10 @@ const createCustomer = catchAsync(async (req, res) => {
       name: payload.name.trim(),
       countryCode,
       phoneNumber,
+      whatsappNumber: payload.whatsappNumber ? payload.whatsappNumber.trim() : null,
       email: payload.email || null,
       address: payload.address || null,
+      image: payload.image ? payload.image.trim() : null,
       createdById: actor.id,
       updatedById: actor.id,
     },
@@ -117,8 +137,10 @@ const createCustomer = catchAsync(async (req, res) => {
     details: {
       name: customer.name,
       phoneNumber: customer.phoneNumber,
+      whatsappNumber: customer.whatsappNumber,
       email: customer.email,
       address: customer.address,
+      image: customer.image,
     },
   });
 
@@ -164,6 +186,8 @@ const getAllCustomers = catchAsync(async (req, res) => {
       name: true,
       countryCode: true,
       phoneNumber: true,
+      whatsappNumber: true,
+      image: true,
       email: true,
       address: true,
       isDeleted: true,
@@ -202,15 +226,11 @@ const getAllCustomers = catchAsync(async (req, res) => {
   const result = await customersQueryBuilder.execute();
 
   const rows = (result.data || []) as { id: string }[];
-  const data = isExportAll
-    ? rows
-    : attachCustomerFinancials(
-        rows,
-        await computeCustomersFinancials(
-          prisma,
-          rows.map(row => row.id),
-        ),
-      );
+  const financials = await computeCustomersFinancials(
+    prisma,
+    rows.map(row => row.id),
+  );
+  const data = attachCustomerFinancials(rows, financials);
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
@@ -316,16 +336,36 @@ const updateCustomer = catchAsync(async (req, res) => {
     }
   }
 
+  const previousImage = existing.image;
+  const isImageChanging =
+    payload.image !== undefined && payload.image !== previousImage;
+
   const updatedCustomer = await prisma.customer.update({
     where: { id },
     data: {
       ...payload,
       countryCode: updatedCountryCode,
       phoneNumber: updatedPhone,
+      whatsappNumber:
+        payload.whatsappNumber !== undefined
+          ? payload.whatsappNumber?.trim() || null
+          : undefined,
+      image:
+        payload.image !== undefined
+          ? payload.image?.trim() || null
+          : undefined,
       name: payload.name ? payload.name.trim() : undefined,
       updatedById: actor.id,
     },
   });
+
+  // delete will only call if new image perfectly updated
+  if (isImageChanging && previousImage) {
+    deleteFromLocalStorage(previousImage);
+    if (typeof previousImage === 'string' && previousImage.includes('cloudinary.com')) {
+      deleteFromCloudinary(previousImage);
+    }
+  }
 
   logActivity({
     userId: actor.id,
@@ -336,6 +376,8 @@ const updateCustomer = catchAsync(async (req, res) => {
     details: {
       name: updatedCustomer.name,
       phoneNumber: updatedCustomer.phoneNumber,
+      whatsappNumber: updatedCustomer.whatsappNumber,
+      image: updatedCustomer.image,
       email: updatedCustomer.email,
       address: updatedCustomer.address,
     },
