@@ -5,6 +5,7 @@ import { AuthByOtpRouters } from '../modules/AuthByOtp/auth.routes';
 
 import { NotificationRouters } from '../modules/Notification/notification.routes';
 import { ActivityLogRouters } from '../modules/ActivityLog/activityLog.routes';
+import { CustomerTransactionRouters } from '../modules/CustomerTransaction/customerTransaction.routes';
 import { ProductRouters } from '../modules/Product/product.routes';
 import { CustomerRouters } from '../modules/Customer/customer.routes';
 import { ReceiptRouters } from '../modules/Receipt/receipt.routes';
@@ -26,6 +27,10 @@ const moduleRoutes = [
   {
     path: '/customers',
     route: CustomerRouters,
+  },
+  {
+    path: '/customer-transactions',
+    route: CustomerTransactionRouters,
   },
   {
     path: '/products',
