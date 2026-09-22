@@ -4,7 +4,12 @@ import sendResponse from '../../utils/sendResponse';
 import { prisma } from '../../utils/prisma';
 import QueryBuilder from '../../builder/QueryBuilder';
 import AppError from '../../errors/AppError';
-import { NotificationType, ReceiptStatus, UserRoleEnum } from '../../../generated/prisma/client';
+import {
+  CustomerTransactionType,
+  NotificationType,
+  ReceiptStatus,
+  UserRoleEnum,
+} from '../../../generated/prisma/client';
 import { logActivity } from '../../utils/activityLog';
 import { notifyAdmins, sendNotification } from '../../utils/notification';
 import { receiptSearchableFields } from './receipt.constant';
@@ -214,13 +219,35 @@ const createReceipt = catchAsync(async (req, res) => {
       })),
     });
 
-    // If initial payment was made, record it as the first payment entry
+    // Create CustomerTransaction for Receipt
+    await tx.customerTransaction.create({
+      data: {
+        customerId: customer.id,
+        type: CustomerTransactionType.RECEIPT,
+        receiptId: receipt.id,
+        note: note || null,
+        createdById: actor.id,
+      },
+    });
+
+    // If initial payment was made, record it as the first payment entry and create CustomerTransaction for Payment
     if (finalPaidAmount > 0) {
-      await tx.receiptPayment.create({
+      const initialPayment = await tx.receiptPayment.create({
         data: {
           receiptId: receipt.id,
           amount: finalPaidAmount,
           note: 'Initial payment upon receipt creation',
+          createdById: actor.id,
+        },
+      });
+
+      await tx.customerTransaction.create({
+        data: {
+          customerId: customer.id,
+          type: CustomerTransactionType.PAYMENT,
+          receiptId: receipt.id,
+          paymentId: initialPayment.id,
+          note: initialPayment.note || null,
           createdById: actor.id,
         },
       });
@@ -1035,6 +1062,19 @@ const addPayment = catchAsync(async (req, res) => {
       },
     });
 
+    // Create CustomerTransaction for Payment
+    await tx.customerTransaction.create({
+      data: {
+        customerId: receipt.customerId,
+        type: CustomerTransactionType.PAYMENT,
+        receiptId: receipt.id,
+        paymentId: payment.id,
+        note: note || null,
+        createdById: actor.id,
+        createdAt: date ? new Date(date) : undefined,
+      },
+    });
+
     // 2. Update Receipt totals
     const newPaidAmount = roundToTwo(receipt.paidAmount + paymentAmount);
     const newDueAmount = roundToTwo(Math.max(0, receipt.totalAmount - newPaidAmount));
@@ -1158,6 +1198,15 @@ const updatePayment = catchAsync(async (req, res) => {
       },
     });
 
+    // Update associated customer transaction note/createdAt if changed
+    await tx.customerTransaction.updateMany({
+      where: { paymentId },
+      data: {
+        note: note !== undefined ? (note || null) : existingPayment.note,
+        createdAt: date ? new Date(date) : undefined,
+      },
+    });
+
     // 2. Update Receipt totals
     const newPaidAmount = roundToTwo(receipt.paidAmount + diff);
     const newDueAmount = roundToTwo(Math.max(0, receipt.totalAmount - newPaidAmount));
@@ -1249,6 +1298,11 @@ const deletePayment = catchAsync(async (req, res) => {
     // 1. Delete payment
     await tx.receiptPayment.delete({
       where: { id: paymentId },
+    });
+
+    // Delete associated customer transaction
+    await tx.customerTransaction.deleteMany({
+      where: { paymentId },
     });
 
     // 2. Revert paid and due amounts

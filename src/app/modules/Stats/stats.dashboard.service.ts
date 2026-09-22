@@ -15,13 +15,19 @@ import {
   aggregateSummary,
   aggregateTopProducts,
   buildProfitBreakdown,
+  endOfMonthDhaka,
+  generateMonthKeys,
   lastMonthKeys,
   resolveDashboardRange,
   startOfMonthDhaka,
   toDhakaDateString,
   type AnalyticsLine,
 } from './stats.analytics.utils';
-import { parseDashboardQuery, parseLowStockQuery } from './stats.validation';
+import {
+  parseDashboardQuery,
+  parseLowStockQuery,
+  parseMonthRangeQuery,
+} from './stats.validation';
 
 /**
  * Loads receipt lines (with returned qty) for receipts created in [gte, lte].
@@ -107,6 +113,11 @@ const getLowStockCount = () =>
     where: { isDeleted: false, stock: { lte: LOW_STOCK_THRESHOLD } },
   });
 
+const getTotalCustomerCount = () =>
+  prisma.customer.count({
+    where: { isDeleted: false },
+  });
+
 const getDashboardSummary = catchAsync(async (req, res) => {
   const query = parseDashboardQuery(req.query);
   const todayStr = toDhakaDateString(new Date());
@@ -129,9 +140,10 @@ const getDashboardSummary = catchAsync(async (req, res) => {
   );
   const { gte, lte } = dayRange(startDate, endDate);
 
-  const [lines, lowStockCount] = await Promise.all([
+  const [lines, lowStockCount, totalCustomers] = await Promise.all([
     loadAnalyticsLines(gte, lte),
     getLowStockCount(),
+    getTotalCustomerCount(),
   ]);
 
   sendResponse(res, {
@@ -144,20 +156,29 @@ const getDashboardSummary = catchAsync(async (req, res) => {
         endDate,
         timezone: DASHBOARD_TZ,
       },
-      summary: { ...aggregateSummary(lines), lowStockCount },
+      summary: { ...aggregateSummary(lines), totalCustomers, lowStockCount },
       topProducts: aggregateTopProducts(lines, TOP_PRODUCTS_LIMIT),
     },
   });
 });
 
-const loadMonthlySeries = async () => {
-  const monthKeys = lastMonthKeys(toDhakaDateString(new Date()), TREND_MONTHS);
-  const lines = await loadAnalyticsLines(startOfMonthDhaka(monthKeys[0]));
+const loadMonthlySeries = async (startMonth?: string, endMonth?: string) => {
+  const monthKeys =
+    startMonth && endMonth
+      ? generateMonthKeys(startMonth, endMonth)
+      : lastMonthKeys(toDhakaDateString(new Date()), TREND_MONTHS);
+
+  if (monthKeys.length === 0) return [];
+
+  const gte = startOfMonthDhaka(monthKeys[0]);
+  const lte = endOfMonthDhaka(monthKeys[monthKeys.length - 1]);
+  const lines = await loadAnalyticsLines(gte, lte);
   return aggregateByMonth(lines, monthKeys);
 };
 
-const getSalesPerformance = catchAsync(async (_req, res) => {
-  const points = await loadMonthlySeries();
+const getSalesPerformance = catchAsync(async (req, res) => {
+  const { startMonth, endMonth } = parseMonthRangeQuery(req.query);
+  const points = await loadMonthlySeries(startMonth, endMonth);
   sendResponse(res, {
     statusCode: httpStatus.OK,
     message: 'Sales performance retrieved successfully',
@@ -165,8 +186,9 @@ const getSalesPerformance = catchAsync(async (_req, res) => {
   });
 });
 
-const getProfitBreakdown = catchAsync(async (_req, res) => {
-  const points = await loadMonthlySeries();
+const getProfitBreakdown = catchAsync(async (req, res) => {
+  const { startMonth, endMonth } = parseMonthRangeQuery(req.query);
+  const points = await loadMonthlySeries(startMonth, endMonth);
   sendResponse(res, {
     statusCode: httpStatus.OK,
     message: 'Profit breakdown retrieved successfully',

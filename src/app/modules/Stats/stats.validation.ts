@@ -40,6 +40,42 @@ const dashboardQueryFields = z
 export const parseDashboardQuery = (query: unknown) =>
   dashboardQueryFields.parse(query);
 
+const isoMonthOnly = z
+  .string()
+  .regex(/^\d{4}-\d{2}$/, 'Month must be YYYY-MM')
+  .refine(v => {
+    const [y, m] = v.split('-').map(Number);
+    return y >= 2000 && y <= 2100 && m >= 1 && m <= 12;
+  }, 'Invalid calendar month');
+
+const monthRangeQueryFields = z
+  .object({
+    startMonth: isoMonthOnly.optional(),
+    endMonth: isoMonthOnly.optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (
+      (data.startMonth && !data.endMonth) ||
+      (!data.startMonth && data.endMonth)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Both startMonth and endMonth must be provided together',
+        path: [!data.startMonth ? 'startMonth' : 'endMonth'],
+      });
+    }
+    if (data.startMonth && data.endMonth && data.startMonth > data.endMonth) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'startMonth cannot be after endMonth',
+        path: ['startMonth'],
+      });
+    }
+  });
+
+export const parseMonthRangeQuery = (query: unknown) =>
+  monthRangeQueryFields.parse(query);
+
 const lowStockQueryFields = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(10),

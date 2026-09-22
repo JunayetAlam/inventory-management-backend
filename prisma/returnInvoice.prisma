@@ -27,6 +27,7 @@ model ReturnInvoice {
   updatedBy   User?   @relation("ReturnInvoiceUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
 
   items ReturnInvoiceItem[]
+  transactions CustomerTransaction[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -28,6 +28,7 @@ model Receipt {
   payments      ReceiptPayment[]
   returnInvoices ReturnInvoice[]
   returnInvoiceItems ReturnInvoiceItem[]
+  transactions  CustomerTransaction[]
 
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
@@ -84,6 +85,8 @@ model ReceiptPayment {
   approvedById String?
   approvedBy   User?        @relation("ReceiptPaymentApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
   approvedAt   DateTime?
+
+  transactions CustomerTransaction[]
 
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt

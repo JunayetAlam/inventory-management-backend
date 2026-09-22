@@ -121,6 +121,12 @@ const getAllProducts = catchAsync(async (req, res) => {
     query.isDeleteRequested = false;
   }
 
+  const isLowStock = query.lowStock === 'true' || query.lowStock === true;
+  delete query.lowStock;
+
+  const stockStatus = query.stockStatus as string;
+  delete query.stockStatus;
+
   const productsQuery = new QueryBuilder<typeof prisma.product>(
     prisma.product,
     query,
@@ -130,7 +136,31 @@ const getAllProducts = catchAsync(async (req, res) => {
 
   let productsQueryBuilder = productsQuery
     .search(productSearchableFields)
-    .filter()
+    .filter();
+
+  if (stockStatus === 'NEGATIVE') {
+    productsQueryBuilder = productsQueryBuilder.addWhere({
+      stock: { lt: 0 },
+    });
+  } else if (stockStatus === 'OUT_OF_STOCK') {
+    productsQueryBuilder = productsQueryBuilder.addWhere({
+      stock: { equals: 0 },
+    });
+  } else if (stockStatus === 'CRITICAL') {
+    productsQueryBuilder = productsQueryBuilder.addWhere({
+      stock: { gt: 0, lte: 5 },
+    });
+  } else if (stockStatus === 'LOW') {
+    productsQueryBuilder = productsQueryBuilder.addWhere({
+      stock: { gt: 5, lte: 20 },
+    });
+  } else if (isLowStock) {
+    productsQueryBuilder = productsQueryBuilder.addWhere({
+      stock: { lte: 20 },
+    });
+  }
+
+  productsQueryBuilder = productsQueryBuilder
     .sort()
     .customFields({
       id: true,
@@ -197,7 +227,7 @@ const getAllProducts = catchAsync(async (req, res) => {
  * Active-catalog stats: product count, stock sum, net sold qty (receipts − returns).
  */
 const getProductStats = catchAsync(async (_req, res) => {
-  const [productAgg, soldAgg, returnedAgg] = await Promise.all([
+  const [productAgg, soldAgg, returnedAgg, lowStockCount] = await Promise.all([
     prisma.product.aggregate({
       where: { isDeleted: false },
       _count: { _all: true },
@@ -223,6 +253,12 @@ const getProductStats = catchAsync(async (_req, res) => {
       },
       _sum: { quantity: true },
     }),
+    prisma.product.count({
+      where: {
+        isDeleted: false,
+        stock: { lte: 20 },
+      },
+    }),
   ]);
 
   const totalSoldRaw = Number(soldAgg._sum.quantity) || 0;
@@ -235,6 +271,7 @@ const getProductStats = catchAsync(async (_req, res) => {
       totalProducts: productAgg._count._all,
       totalStock: roundToTwo(Number(productAgg._sum.stock) || 0),
       totalSoldQty: roundToTwo(Math.max(0, totalSoldRaw - totalReturned)),
+      lowStockCount,
     },
   });
 });

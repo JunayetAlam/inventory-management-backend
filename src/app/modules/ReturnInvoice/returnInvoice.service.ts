@@ -4,7 +4,12 @@ import sendResponse from '../../utils/sendResponse';
 import { prisma } from '../../utils/prisma';
 import QueryBuilder from '../../builder/QueryBuilder';
 import AppError from '../../errors/AppError';
-import { NotificationType, ReceiptStatus, UserRoleEnum } from '../../../generated/prisma/client';
+import {
+  CustomerTransactionType,
+  NotificationType,
+  ReceiptStatus,
+  UserRoleEnum,
+} from '../../../generated/prisma/client';
 import { logActivity } from '../../utils/activityLog';
 import { notifyAdmins, sendNotification } from '../../utils/notification';
 import {
@@ -363,6 +368,18 @@ const createReturnInvoice = catchAsync(async (req, res) => {
         discount: item.discount,
         totalPrice: item.totalPrice,
       })),
+    });
+
+    // Create CustomerTransaction for Return Invoice
+    await tx.customerTransaction.create({
+      data: {
+        customerId: receipt.customerId,
+        type: CustomerTransactionType.RETURN_INVOICE,
+        receiptId: receipt.id,
+        returnInvoiceId: returnInvoice.id,
+        note: note || null,
+        createdById: actor.id,
+      },
     });
 
     return tx.returnInvoice.findUnique({
@@ -838,6 +855,15 @@ const updateReturnInvoice = catchAsync(async (req, res) => {
         : payload.status !== undefined
           ? payload.status
           : undefined;
+
+    if (payload.note !== undefined) {
+      await tx.customerTransaction.updateMany({
+        where: { returnInvoiceId: id },
+        data: {
+          note: payload.note || null,
+        },
+      });
+    }
 
     return tx.returnInvoice.update({
       where: { id },

@@ -4,6 +4,8 @@ import {
   aggregateSummary,
   buildProfitBreakdown,
   computeLine,
+  endOfMonthDhaka,
+  generateMonthKeys,
   lastMonthKeys,
   resolveDashboardRange,
   toDhakaMonthKey,
@@ -47,16 +49,17 @@ describe('computeLine', () => {
 });
 
 describe('aggregateSummary', () => {
-  test('sums profit and percent', () => {
+  test('sums sales and expenses', () => {
     expect(aggregateSummary([line(), line({ returnedQty: 10 })])).toEqual({
       totalSales: 1000,
       totalExpenses: 600,
-      totalProfit: 400,
-      profitPercent: 40,
     });
   });
-  test('empty gives null percent', () => {
-    expect(aggregateSummary([]).profitPercent).toBeNull();
+  test('empty gives zeroes', () => {
+    expect(aggregateSummary([])).toEqual({
+      totalSales: 0,
+      totalExpenses: 0,
+    });
   });
 });
 
@@ -123,5 +126,34 @@ describe('resolveDashboardRange', () => {
         null,
       ),
     ).toEqual({ startDate: '2026-09-01', endDate: '2026-09-20' });
+  });
+});
+
+describe('generateMonthKeys', () => {
+  test('single month', () => {
+    expect(generateMonthKeys('2025-05', '2025-05')).toEqual(['2025-05']);
+  });
+  test('same year multi-month', () => {
+    expect(generateMonthKeys('2025-01', '2025-04')).toEqual([
+      '2025-01',
+      '2025-02',
+      '2025-03',
+      '2025-04',
+    ]);
+  });
+  test('cross year multi-month', () => {
+    expect(generateMonthKeys('2024-11', '2025-02')).toEqual([
+      '2024-11',
+      '2024-12',
+      '2025-01',
+      '2025-02',
+    ]);
+  });
+});
+
+describe('endOfMonthDhaka', () => {
+  test('calculates end of month timestamp in Dhaka timezone', () => {
+    const endFeb = endOfMonthDhaka('2024-02'); // 2024 is leap year
+    expect(endFeb.toISOString()).toBe('2024-02-29T17:59:59.999Z'); // +06:00 offset
   });
 });

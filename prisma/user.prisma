@@ -62,6 +62,8 @@ model User {
   createdShops Shop[] @relation("ShopCreatedBy")
   updatedShops Shop[] @relation("ShopUpdatedBy")
 
+  createdTransactions CustomerTransaction[] @relation("CustomerTransactionCreatedBy")
+
   activityLogs      ActivityLog[]
   notifications     Notification[]     @relation("UserNotifications")
   notificationReads NotificationRead[]

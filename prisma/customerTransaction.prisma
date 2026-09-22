@@ -1,0 +1,40 @@
+enum CustomerTransactionType {
+  RECEIPT
+  PAYMENT
+  RETURN_INVOICE
+}
+
+model CustomerTransaction {
+  id         String   @id @default(uuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  type CustomerTransactionType
+
+  // Link / reference IDs
+  receiptId String?
+  receipt   Receipt? @relation(fields: [receiptId], references: [id], onDelete: SetNull)
+
+  paymentId String?
+  payment   ReceiptPayment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  returnInvoiceId String?
+  returnInvoice   ReturnInvoice? @relation(fields: [returnInvoiceId], references: [id], onDelete: SetNull)
+
+  note String?
+
+  createdById String?
+  createdBy   User?   @relation("CustomerTransactionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([type])
+  @@index([receiptId])
+  @@index([paymentId])
+  @@index([returnInvoiceId])
+  @@index([createdById])
+  @@index([createdAt])
+  @@map("customer_transactions")
+}

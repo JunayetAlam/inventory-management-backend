@@ -50,8 +50,6 @@ export const computeLine = (line: AnalyticsLine): LineResult => {
 export interface SummaryTotals {
   totalSales: number;
   totalExpenses: number;
-  totalProfit: number;
-  profitPercent: number | null;
 }
 
 export const aggregateSummary = (lines: AnalyticsLine[]): SummaryTotals => {
@@ -64,13 +62,9 @@ export const aggregateSummary = (lines: AnalyticsLine[]): SummaryTotals => {
   }
   const totalSales = roundToTwo(sales);
   const totalExpenses = roundToTwo(cost);
-  const totalProfit = roundToTwo(sales - cost);
   return {
     totalSales,
     totalExpenses,
-    totalProfit,
-    profitPercent:
-      totalSales > 0 ? roundToTwo((totalProfit / totalSales) * 100) : null,
   };
 };
 
@@ -165,8 +159,39 @@ export const lastMonthKeys = (todayStr: string, count: number): string[] => {
   return keys;
 };
 
+/** Generates an inclusive array of month keys [startMonth, ..., endMonth]. */
+export const generateMonthKeys = (
+  startMonth: string,
+  endMonth: string,
+): string[] => {
+  const [startY, startM] = startMonth.split('-').map(Number);
+  const [endY, endM] = endMonth.split('-').map(Number);
+
+  const keys: string[] = [];
+  let curY = startY;
+  let curM = startM;
+
+  while (curY < endY || (curY === endY && curM <= endM)) {
+    keys.push(`${curY}-${String(curM).padStart(2, '0')}`);
+    curM++;
+    if (curM > 12) {
+      curM = 1;
+      curY++;
+    }
+  }
+  return keys;
+};
+
 export const startOfMonthDhaka = (monthKey: string): Date =>
   new Date(`${monthKey}-01T00:00:00.000${DASHBOARD_TZ_OFFSET}`);
+
+export const endOfMonthDhaka = (monthKey: string): Date => {
+  const [y, m] = monthKey.split('-').map(Number);
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return new Date(
+    `${monthKey}-${String(lastDay).padStart(2, '0')}T23:59:59.999${DASHBOARD_TZ_OFFSET}`,
+  );
+};
 
 export interface MonthlyPoint {
   month: string;

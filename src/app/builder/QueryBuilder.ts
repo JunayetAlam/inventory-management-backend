@@ -80,7 +80,14 @@ class QueryBuilder<
     return this;
   }
 
-
+  // Add custom where condition
+  addWhere(whereClause: Record<string, unknown>) {
+    this.prismaQuery.where = {
+      ...this.prismaQuery.where,
+      ...whereClause,
+    };
+    return this;
+  }
 
   // Sorting
   sort() {
