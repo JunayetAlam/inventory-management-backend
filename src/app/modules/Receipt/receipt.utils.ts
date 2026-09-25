@@ -127,40 +127,53 @@ export const getReceiptItemsUniquenessError = (
 export const getDuplicateReceiptProductMessage = () => DUPLICATE_PRODUCT_MESSAGE;
 
 /**
- * Generate unique, chronological receipt number: REC-YYYYMMDD-XXXX
+ * Generate unique, monotonically increasing receipt number: REC-00000001
+ * Sequence never resets and never repeats, even if previous receipts are deleted.
  */
 export const generateReceiptNumber = async (prismaClient: any): Promise<string> => {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  const dateStr = `${year}${month}${day}`;
-  const prefix = `REC-${dateStr}-`;
+  const prefix = 'REC-';
 
-  const latestReceipt = await prismaClient.receipt.findFirst({
+  // Find all receipts starting with REC- (including isDeleted: true)
+  const receipts = await prismaClient.receipt.findMany({
     where: {
       receiptNumber: {
         startsWith: prefix,
       },
-    },
-    orderBy: {
-      receiptNumber: 'desc',
     },
     select: {
       receiptNumber: true,
     },
   });
 
-  let nextSeq = 1;
-  if (latestReceipt?.receiptNumber) {
-    const parts = latestReceipt.receiptNumber.split('-');
-    const lastSeq = parseInt(parts[parts.length - 1], 10);
-    if (!isNaN(lastSeq)) {
-      nextSeq = lastSeq + 1;
+  let maxSeq = 0;
+  for (const r of receipts) {
+    if (!r.receiptNumber) continue;
+    const match = r.receiptNumber.match(/^REC-(\d+)$/);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (!isNaN(num) && num > maxSeq) {
+        maxSeq = num;
+      }
     }
   }
 
-  return `${prefix}${String(nextSeq).padStart(4, '0')}`;
+  let nextSeq = maxSeq + 1;
+  let candidate = `${prefix}${String(nextSeq).padStart(8, '0')}`;
+
+  // Collision safety loop across all receipts (active or deleted)
+  while (true) {
+    const existing = await prismaClient.receipt.findFirst({
+      where: { receiptNumber: candidate },
+      select: { id: true },
+    });
+    if (!existing) {
+      break;
+    }
+    nextSeq++;
+    candidate = `${prefix}${String(nextSeq).padStart(8, '0')}`;
+  }
+
+  return candidate;
 };
 
 export interface CalculatedItem {

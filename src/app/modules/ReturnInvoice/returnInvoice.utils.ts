@@ -6,40 +6,53 @@ const DUPLICATE_RECEIPT_ITEM_MESSAGE =
 export const getDuplicateReturnItemMessage = () => DUPLICATE_RECEIPT_ITEM_MESSAGE;
 
 /**
- * Generate unique return invoice number: RET-YYYYMMDD-XXXX
+ * Generate unique, monotonically increasing return invoice number: RET-00000001
+ * Sequence never resets and never repeats, even if previous return invoices are deleted.
  */
 export const generateReturnNumber = async (prismaClient: any): Promise<string> => {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  const dateStr = `${year}${month}${day}`;
-  const prefix = `RET-${dateStr}-`;
+  const prefix = 'RET-';
 
-  const latest = await prismaClient.returnInvoice.findFirst({
+  // Find all return invoices starting with RET- (including isDeleted: true)
+  const returnInvoices = await prismaClient.returnInvoice.findMany({
     where: {
       returnNumber: {
         startsWith: prefix,
       },
-    },
-    orderBy: {
-      returnNumber: 'desc',
     },
     select: {
       returnNumber: true,
     },
   });
 
-  let nextSeq = 1;
-  if (latest?.returnNumber) {
-    const parts = latest.returnNumber.split('-');
-    const lastSeq = parseInt(parts[parts.length - 1], 10);
-    if (!isNaN(lastSeq)) {
-      nextSeq = lastSeq + 1;
+  let maxSeq = 0;
+  for (const ret of returnInvoices) {
+    if (!ret.returnNumber) continue;
+    const match = ret.returnNumber.match(/^RET-(\d+)$/);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (!isNaN(num) && num > maxSeq) {
+        maxSeq = num;
+      }
     }
   }
 
-  return `${prefix}${String(nextSeq).padStart(4, '0')}`;
+  let nextSeq = maxSeq + 1;
+  let candidate = `${prefix}${String(nextSeq).padStart(8, '0')}`;
+
+  // Collision safety loop across all return invoices (active or deleted)
+  while (true) {
+    const existing = await prismaClient.returnInvoice.findFirst({
+      where: { returnNumber: candidate },
+      select: { id: true },
+    });
+    if (!existing) {
+      break;
+    }
+    nextSeq++;
+    candidate = `${prefix}${String(nextSeq).padStart(8, '0')}`;
+  }
+
+  return candidate;
 };
 
 export const getReturnItemsUniquenessError = (

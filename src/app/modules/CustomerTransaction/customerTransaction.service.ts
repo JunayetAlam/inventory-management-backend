@@ -228,6 +228,13 @@ const getAllCustomerTransactions = catchAsync(async (req, res) => {
         payment: {
           select: {
             id: true,
+            receiptId: true,
+            receipt: {
+              select: {
+                id: true,
+                receiptNumber: true,
+              },
+            },
             amount: true,
             note: true,
             status: true,
@@ -245,6 +252,13 @@ const getAllCustomerTransactions = catchAsync(async (req, res) => {
           select: {
             id: true,
             returnNumber: true,
+            receiptId: true,
+            receipt: {
+              select: {
+                id: true,
+                receiptNumber: true,
+              },
+            },
             refundedAmount: true,
             discount: true,
             status: true,
@@ -337,6 +351,9 @@ const getAllCustomerTransactions = catchAsync(async (req, res) => {
     let cash = 0;
     let referenceNumber = '';
 
+    const effectiveReceipt = tx.receipt || tx.payment?.receipt || tx.returnInvoice?.receipt;
+    const effectiveReceiptId = tx.receiptId || tx.payment?.receiptId || tx.returnInvoice?.receiptId;
+
     if (tx.type === CustomerTransactionType.RECEIPT && tx.receipt) {
       due = tx.receipt.totalAmount;
       cash = 0;
@@ -344,7 +361,7 @@ const getAllCustomerTransactions = catchAsync(async (req, res) => {
     } else if (tx.type === CustomerTransactionType.PAYMENT && tx.payment) {
       due = 0;
       cash = tx.payment.amount;
-      referenceNumber = tx.receipt?.receiptNumber ? `${tx.receipt.receiptNumber}` : 'Payment';
+      referenceNumber = effectiveReceipt?.receiptNumber ? `${effectiveReceipt.receiptNumber}` : 'Payment';
     } else if (tx.type === CustomerTransactionType.RETURN_INVOICE && tx.returnInvoice) {
       due = 0;
       const itemsTotal = (tx.returnInvoice.items || []).reduce((s, it) => s + it.totalPrice, 0);
@@ -358,6 +375,8 @@ const getAllCustomerTransactions = catchAsync(async (req, res) => {
 
     return {
       ...tx,
+      receiptId: effectiveReceiptId,
+      receipt: effectiveReceipt,
       due: roundToTwo(due),
       cash: roundToTwo(cash),
       balance: roundToTwo(balance),
