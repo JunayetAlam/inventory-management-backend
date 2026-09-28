@@ -37,7 +37,7 @@ const upsertShopDetails = catchAsync(async (req, res) => {
 
   const sanitizedData = {
     name: payload.name.trim(),
-    tagline: payload.tagline ? payload.tagline.trim() : null,
+    proprietor: payload.proprietor ? payload.proprietor.trim() : null,
     logo: payload.logo ? payload.logo.trim() : null,
     phoneNumbers: Array.isArray(payload.phoneNumbers)
       ? payload.phoneNumbers.map((p: string) => p.trim()).filter(Boolean)

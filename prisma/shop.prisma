@@ -1,7 +1,7 @@
 model Shop {
   id           String    @id @default(uuid())
   name         String
-  tagline      String?
+  proprietor   String?
   logo         String?
   phoneNumbers String[]  @default([])
   emails       String[]  @default([])

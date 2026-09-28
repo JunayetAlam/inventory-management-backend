@@ -28,12 +28,20 @@ export const getBaseCookieOptions = (): CookieOptions => {
     (process.env.COOKIE_SAMESITE as CookieOptions['sameSite']) ||
     (isSecure ? 'none' : 'lax');
 
-  return {
+  const cookieDomain = process.env.COOKIE_DOMAIN?.trim();
+
+  const options: CookieOptions = {
     httpOnly: true,
     secure: isSecure,
     sameSite,
     path: '/',
   };
+
+  if (cookieDomain) {
+    options.domain = cookieDomain;
+  }
+
+  return options;
 };
 
 const sessionCookieMaxAge = (createdAt: Date) => {

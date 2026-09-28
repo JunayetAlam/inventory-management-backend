@@ -7,10 +7,10 @@ const upsertShopSchema = z.object({
       .trim()
       .min(1, 'Shop name cannot be empty')
       .max(120, 'Shop name is too long'),
-    tagline: z
+    proprietor: z
       .string()
       .trim()
-      .max(255, 'Tagline is too long')
+      .max(255, 'Proprietor name is too long')
       .optional()
       .nullable()
       .or(z.literal('')),

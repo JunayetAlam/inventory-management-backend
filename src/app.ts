@@ -16,6 +16,8 @@ const rawClientUrls = config.base_url_client
 const allowedOrigins = new Set([
   ...rawClientUrls,
   ...rawClientUrls.map((url) => url.replace(/\/+$/, '')),
+  'https://sanowarelectric.store',
+  'https://www.sanowarelectric.store',
   'http://localhost:3000',
   'http://localhost:3161',
   'http://127.0.0.1:3000',
@@ -37,6 +39,15 @@ app.use(
       return callback(null, false);
     },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'Accept',
+      'Origin',
+    ],
+    optionsSuccessStatus: 200,
   }),
 );
 
