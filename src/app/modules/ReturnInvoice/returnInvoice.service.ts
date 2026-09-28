@@ -46,7 +46,7 @@ const previousReturnInclude = {
       select: {
         sellingPrice: true,
         quantity: true,
-        discount: true,
+        discounts: true,
         totalPrice: true,
       },
     },
@@ -86,7 +86,7 @@ const returnInvoiceInclude = {
           productName: true,
           quantity: true,
           sellingPrice: true,
-          discount: true,
+          discounts: true,
           unit: true,
         },
       },
@@ -107,6 +107,7 @@ type ReturnPayloadItem = {
   receiptItemId: string;
   quantity: number;
   sellingPrice?: number;
+  discounts?: number[];
   discount?: number;
 };
 
@@ -166,7 +167,7 @@ const enrichReturnItemsFromReceipt = async (
       unit: source.unit,
       sellingPrice: it.sellingPrice ?? source.sellingPrice,
       quantity: it.quantity,
-      discount: it.discount ?? source.discount,
+      discounts: it.discounts ?? (it.discount !== undefined ? [it.discount] : source.discounts),
     };
   });
 
@@ -298,7 +299,7 @@ const createReturnInvoice = catchAsync(async (req, res) => {
         select: {
           sellingPrice: true,
           quantity: true,
-          discount: true,
+          discounts: true,
           totalPrice: true,
         },
       },
@@ -365,7 +366,7 @@ const createReturnInvoice = catchAsync(async (req, res) => {
         unit: item.unit,
         sellingPrice: item.sellingPrice,
         quantity: item.quantity,
-        discount: item.discount,
+        discounts: item.discounts,
         totalPrice: item.totalPrice,
       })),
     });
@@ -480,7 +481,7 @@ const getAllReturnInvoices = catchAsync(async (req, res) => {
         select: {
           sellingPrice: true,
           quantity: true,
-          discount: true,
+          discounts: true,
           totalPrice: true,
         },
       },
@@ -602,7 +603,7 @@ const getReturnableItemsByReceipt = catchAsync(async (req, res) => {
       productName: it.productName,
       unit: it.unit,
       sellingPrice: it.sellingPrice,
-      discount: it.discount,
+      discounts: it.discounts,
       originalQuantity: it.quantity,
       alreadyReturned,
       remainingReturnable,
@@ -618,7 +619,7 @@ const getReturnableItemsByReceipt = catchAsync(async (req, res) => {
         select: {
           sellingPrice: true,
           quantity: true,
-          discount: true,
+          discounts: true,
           totalPrice: true,
         },
       },
@@ -647,7 +648,7 @@ const getReturnableItemsByReceipt = catchAsync(async (req, res) => {
             select: {
               sellingPrice: true,
               quantity: true,
-              discount: true,
+              discounts: true,
               totalPrice: true,
             },
           },
@@ -817,7 +818,7 @@ const updateReturnInvoice = catchAsync(async (req, res) => {
           unit: item.unit,
           sellingPrice: item.sellingPrice,
           quantity: item.quantity,
-          discount: item.discount,
+          discounts: item.discounts,
           totalPrice: item.totalPrice,
         })),
       });
@@ -831,7 +832,7 @@ const updateReturnInvoice = catchAsync(async (req, res) => {
           unit: it.unit,
           sellingPrice: it.sellingPrice,
           quantity: it.quantity,
-          discount: it.discount,
+          discounts: it.discounts,
         })),
         finalDiscount,
         finalRefunded,
@@ -1183,7 +1184,7 @@ const restoreReturnInvoice = catchAsync(async (req, res) => {
       receiptItemId: it.receiptItemId,
       quantity: it.quantity,
       sellingPrice: it.sellingPrice,
-      discount: it.discount,
+      discounts: it.discounts,
     })),
   );
 

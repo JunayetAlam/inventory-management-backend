@@ -15,6 +15,7 @@ import { notifyAdmins, sendNotification } from '../../utils/notification';
 import { receiptSearchableFields } from './receipt.constant';
 import {
   applyStockDeltaMap,
+  areReceiptItemsChanged,
   calculateReceiptTotals,
   deductStockForProductItems,
   generateReceiptNumber,
@@ -163,7 +164,7 @@ const createReceipt = catchAsync(async (req, res) => {
       sellingPrice: it.sellingPrice !== undefined ? it.sellingPrice : (dbProduct?.sellingPrice ?? 0),
       buyingPrice: it.buyingPrice !== undefined ? it.buyingPrice : (dbProduct?.buyingPrice ?? null),
       quantity: it.quantity,
-      discount: it.discount || 0,
+      discounts: it.discounts || (it.discount ? [it.discount] : []),
     };
   });
 
@@ -214,7 +215,7 @@ const createReceipt = catchAsync(async (req, res) => {
         sellingPrice: item.sellingPrice,
         buyingPrice: item.buyingPrice,
         quantity: item.quantity,
-        discount: item.discount,
+        discounts: item.discounts,
         totalPrice: item.totalPrice,
       })),
     });
@@ -523,7 +524,12 @@ const updateReceipt = catchAsync(async (req, res) => {
     );
   }
 
-  if (payload.items && Array.isArray(payload.items)) {
+  const itemsChanged =
+    payload.items && Array.isArray(payload.items)
+      ? areReceiptItemsChanged(existing.items, payload.items)
+      : false;
+
+  if (itemsChanged) {
     const activeReturnCount = await prisma.returnInvoice.count({
       where: { receiptId: id, isDeleted: false },
     });
@@ -633,7 +639,7 @@ const updateReceipt = catchAsync(async (req, res) => {
     const finalDiscount = payload.discount !== undefined ? roundToTwo(payload.discount) : existing.discount;
 
     // 2. If items are being updated, handle differential inventory stock adjustment
-    if (payload.items && Array.isArray(payload.items)) {
+    if (itemsChanged && payload.items && Array.isArray(payload.items)) {
       // Build old quantity map for DB products
       const oldQtyMap = new Map<string, number>();
       existing.items.forEach(it => {
@@ -671,6 +677,11 @@ const updateReceipt = catchAsync(async (req, res) => {
 
       await applyStockDeltaMap(tx, stockDeltaMap, warnings);
 
+      // Clean up any orphaned return invoice items belonging to deleted return invoices for this receipt
+      await tx.returnInvoiceItem.deleteMany({
+        where: { receiptId: id },
+      });
+
       // Delete old items and insert updated items
       await tx.receiptItem.deleteMany({ where: { receiptId: id } });
       await tx.receiptItem.createMany({
@@ -682,14 +693,28 @@ const updateReceipt = catchAsync(async (req, res) => {
           sellingPrice: item.sellingPrice,
           buyingPrice: item.buyingPrice,
           quantity: item.quantity,
-          discount: item.discount,
+          discounts: item.discounts,
           totalPrice: item.totalPrice,
         })),
       });
-    } else if (payload.discount !== undefined) {
-      // Only discount changed without changing items
-      totalAmount = roundToTwo(Math.max(0, subTotal - finalDiscount));
-      dueAmount = roundToTwo(Math.max(0, totalAmount - existing.paidAmount));
+    } else if (payload.discount !== undefined || payload.items) {
+      // Items didn't change (or only discount changed) -> recalculate totals cleanly
+      const totals = calculateReceiptTotals(
+        existing.items.map(it => ({
+          productId: it.productId,
+          productName: it.productName,
+          unit: it.unit,
+          sellingPrice: it.sellingPrice,
+          buyingPrice: it.buyingPrice,
+          quantity: it.quantity,
+          discounts: it.discounts,
+        })),
+        finalDiscount,
+        existing.paidAmount,
+      );
+      subTotal = totals.subTotal;
+      totalAmount = totals.totalAmount;
+      dueAmount = totals.dueAmount;
     }
 
     // 3. Update receipt record

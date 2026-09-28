@@ -76,7 +76,7 @@ export interface CalculatedReturnItem {
   unit: any;
   sellingPrice: number;
   quantity: number;
-  discount: number;
+  discounts: number[];
   totalPrice: number;
 }
 
@@ -106,6 +106,7 @@ export const calculateReturnCreditFromItems = (
     unit?: any;
     sellingPrice: number;
     quantity: number;
+    discounts?: number[] | null;
     discount?: number | null;
   }[],
   overallDiscount = 0,
@@ -122,9 +123,21 @@ export const calculateReturnCreditFromItems = (
     const unitPrice = Number(item.sellingPrice);
     const itemSubtotal = roundToTwo(qty * unitPrice);
 
-    const discountPercent = Math.max(0, Math.min(100, Number(item.discount) || 0));
-    const itemDiscountAmount = roundToTwo((itemSubtotal * discountPercent) / 100);
-    const itemTotalPrice = roundToTwo(Math.max(0, itemSubtotal - itemDiscountAmount));
+    const rawDiscounts: number[] = Array.isArray(item.discounts)
+      ? item.discounts
+      : typeof item.discount === 'number' && item.discount > 0
+        ? [item.discount]
+        : [];
+
+    const sanitizedDiscounts = rawDiscounts
+      .map(d => Math.max(0, Math.min(100, Number(d) || 0)))
+      .filter(d => d > 0);
+
+    let currentPrice = itemSubtotal;
+    for (const disc of sanitizedDiscounts) {
+      currentPrice = roundToTwo(currentPrice * (1 - disc / 100));
+    }
+    const itemTotalPrice = roundToTwo(Math.max(0, currentPrice));
 
     subTotal = roundToTwo(subTotal + itemTotalPrice);
 
@@ -136,7 +149,7 @@ export const calculateReturnCreditFromItems = (
       unit: item.unit || 'PIECE',
       sellingPrice: unitPrice,
       quantity: qty,
-      discount: discountPercent,
+      discounts: sanitizedDiscounts,
       totalPrice: itemTotalPrice,
     };
   });
@@ -165,6 +178,7 @@ export const deriveReturnMoney = (
     unit?: any;
     sellingPrice: number;
     quantity: number;
+    discounts?: number[] | null;
     discount?: number | null;
   }[],
   overallDiscount = 0,
@@ -283,7 +297,7 @@ export const getReturnedQtyMap = async (
 const moneyItemSelect = {
   sellingPrice: true,
   quantity: true,
-  discount: true,
+  discounts: true,
   totalPrice: true,
 } as const;
 

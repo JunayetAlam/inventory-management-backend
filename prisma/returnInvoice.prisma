@@ -62,7 +62,7 @@ model ReturnInvoiceItem {
   unit         ProductUnit @default(PIECE)
   sellingPrice Float
   quantity     Float
-  discount     Float       @default(0)
+  discounts    Float[]     @default([])
   totalPrice   Float
 
   createdAt DateTime @default(now())

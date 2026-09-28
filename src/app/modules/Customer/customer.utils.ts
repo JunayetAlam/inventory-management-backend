@@ -23,7 +23,7 @@ const emptyFinancials = (): CustomerFinancials => ({
 type ReturnItemRow = {
   sellingPrice: number;
   quantity: number;
-  discount: number;
+  discounts: number[];
   totalPrice: number;
 };
 
@@ -49,7 +49,7 @@ type ReceiptRow = {
 const moneyItemSelect = {
   sellingPrice: true,
   quantity: true,
-  discount: true,
+  discounts: true,
   totalPrice: true,
 } as const;
 

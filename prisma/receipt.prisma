@@ -57,7 +57,7 @@ model ReceiptItem {
   sellingPrice Float
   buyingPrice  Float?
   quantity     Float
-  discount     Float       @default(0)
+  discounts    Float[]     @default([])
   totalPrice   Float
 
   returnInvoiceItems ReturnInvoiceItem[]

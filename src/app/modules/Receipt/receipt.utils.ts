@@ -126,6 +126,44 @@ export const getReceiptItemsUniquenessError = (
 
 export const getDuplicateReceiptProductMessage = () => DUPLICATE_PRODUCT_MESSAGE;
 
+export const areReceiptItemsChanged = (
+  existingItems: {
+    productId?: string | null;
+    productName: string;
+    unit: any;
+    sellingPrice: number;
+    quantity: number;
+    discounts?: number[];
+  }[],
+  newItems: {
+    productId?: string | null;
+    productName: string;
+    unit?: any;
+    sellingPrice: number;
+    quantity: number;
+    discounts?: number[];
+  }[],
+): boolean => {
+  if (existingItems.length !== newItems.length) return true;
+  for (let i = 0; i < existingItems.length; i++) {
+    const oldIt = existingItems[i];
+    const newIt = newItems[i];
+    if ((oldIt.productId || null) !== (newIt.productId || null)) return true;
+    if ((oldIt.productName || '').trim().toLowerCase() !== (newIt.productName || '').trim().toLowerCase()) return true;
+    if (oldIt.unit !== (newIt.unit || 'PIECE')) return true;
+    if (roundToTwo(Number(oldIt.sellingPrice)) !== roundToTwo(Number(newIt.sellingPrice))) return true;
+    if (roundToTwo(Number(oldIt.quantity)) !== roundToTwo(Number(newIt.quantity))) return true;
+
+    const oldDiscounts = (oldIt.discounts || []).map(Number).filter(d => d > 0);
+    const newDiscounts = (newIt.discounts || []).map(Number).filter(d => d > 0);
+    if (oldDiscounts.length !== newDiscounts.length) return true;
+    for (let j = 0; j < oldDiscounts.length; j++) {
+      if (roundToTwo(oldDiscounts[j]) !== roundToTwo(newDiscounts[j])) return true;
+    }
+  }
+  return false;
+};
+
 /**
  * Generate unique, monotonically increasing receipt number: REC-00000001
  * Sequence never resets and never repeats, even if previous receipts are deleted.
@@ -183,7 +221,7 @@ export interface CalculatedItem {
   sellingPrice: number;
   buyingPrice?: number | null;
   quantity: number;
-  discount: number; // percentage e.g. 2.5
+  discounts: number[];
   totalPrice: number;
 }
 
@@ -207,6 +245,7 @@ export const calculateReceiptTotals = (
     sellingPrice: number;
     buyingPrice?: number | null;
     quantity: number;
+    discounts?: number[];
     discount?: number;
   }[],
   overallDiscount = 0,
@@ -219,9 +258,21 @@ export const calculateReceiptTotals = (
     const unitPrice = Number(item.sellingPrice);
     const itemSubtotal = roundToTwo(qty * unitPrice);
 
-    const discountPercent = Math.max(0, Math.min(100, Number(item.discount) || 0));
-    const itemDiscountAmount = roundToTwo((itemSubtotal * discountPercent) / 100);
-    const itemTotalPrice = roundToTwo(Math.max(0, itemSubtotal - itemDiscountAmount));
+    const rawDiscounts: number[] = Array.isArray(item.discounts)
+      ? item.discounts
+      : typeof item.discount === 'number' && item.discount > 0
+        ? [item.discount]
+        : [];
+
+    const sanitizedDiscounts = rawDiscounts
+      .map(d => Math.max(0, Math.min(100, Number(d) || 0)))
+      .filter(d => d > 0);
+
+    let currentPrice = itemSubtotal;
+    for (const disc of sanitizedDiscounts) {
+      currentPrice = roundToTwo(currentPrice * (1 - disc / 100));
+    }
+    const itemTotalPrice = roundToTwo(Math.max(0, currentPrice));
 
     subTotal = roundToTwo(subTotal + itemTotalPrice);
 
@@ -232,7 +283,7 @@ export const calculateReceiptTotals = (
       sellingPrice: unitPrice,
       buyingPrice: item.buyingPrice ?? null,
       quantity: qty,
-      discount: discountPercent,
+      discounts: sanitizedDiscounts,
       totalPrice: itemTotalPrice,
     };
   });

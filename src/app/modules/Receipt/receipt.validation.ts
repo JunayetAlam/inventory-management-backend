@@ -14,7 +14,12 @@ const receiptItemSchema = z.object({
   sellingPrice: z.number({ error: 'Selling price is required' }).nonnegative('Selling price cannot be negative'),
   buyingPrice: z.number().nonnegative().optional().nullable(),
   quantity: z.number({ error: 'Quantity is required' }).positive('Quantity must be greater than 0'),
-  discount: z.number().min(0, 'Discount cannot be negative').max(100, 'Discount cannot exceed 100%').default(0),
+  discounts: z
+    .array(z.number().min(0, 'Discount cannot be negative').max(100, 'Discount cannot exceed 100%'))
+    .max(4, 'Maximum 4 discounts allowed per product')
+    .optional()
+    .default([]),
+  discount: z.number().min(0, 'Discount cannot be negative').max(100, 'Discount cannot exceed 100%').optional(),
 });
 
 const areReceiptItemsUnique = (

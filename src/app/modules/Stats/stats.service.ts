@@ -97,7 +97,7 @@ const getPeriodDue = async (gte?: Date, lte?: Date): Promise<number> => {
             select: {
               sellingPrice: true,
               quantity: true,
-              discount: true,
+              discounts: true,
               totalPrice: true,
             },
           },

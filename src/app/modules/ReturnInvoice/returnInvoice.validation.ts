@@ -8,7 +8,10 @@ const DUPLICATE_ITEM_MESSAGE = getDuplicateReturnItemMessage();
 const returnItemSchema = z.object({
   receiptItemId: z.string().uuid('Invalid receipt item ID'),
   quantity: z.number({ error: 'Quantity is required' }).positive('Quantity must be greater than 0'),
-  sellingPrice: z.number().nonnegative('Selling price cannot be negative').optional(),
+  discounts: z
+    .array(z.number().min(0, 'Discount cannot be negative').max(100, 'Discount cannot exceed 100%'))
+    .max(4, 'Maximum 4 discounts allowed per product')
+    .optional(),
   discount: z
     .number()
     .min(0, 'Discount cannot be negative')
