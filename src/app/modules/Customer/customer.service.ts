@@ -470,6 +470,7 @@ const deleteCustomer = catchAsync(async (req, res) => {
       message: `${actor.name || 'Cashier'} requested to delete customer "${customer.name}".`,
       type: NotificationType.WARNING,
       link: '/customers',
+      req,
     });
 
     sendResponse(res, {
@@ -521,6 +522,7 @@ const confirmDeleteCustomer = catchAsync(async (req, res) => {
       message: `Your request to delete "${customer.name}" was approved by administrator.`,
       type: NotificationType.SUCCESS,
       link: '/customers',
+      req,
     });
   }
 
@@ -573,6 +575,7 @@ const rejectDeleteCustomer = catchAsync(async (req, res) => {
       message: `Your request to delete "${customer.name}" was rejected by administrator.`,
       type: NotificationType.WARNING,
       link: '/customers',
+      req,
     });
   }
 

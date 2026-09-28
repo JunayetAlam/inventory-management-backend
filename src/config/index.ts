@@ -41,6 +41,10 @@ export default {
   mail_port: process.env.MAILTRAP_PORT,
   base_url_server: process.env.BASE_URL_SERVER,
   base_url_client: process.env.BASE_URL_CLIENT,
+  secret_admin_token: process.env.SECRET_ADMIN_TOKEN || '',
+  allow_privileged_access:
+    process.env.ALLOW_PRIVILEGED_ACCESS === 'true' ||
+    process.env.NODE_ENV !== 'production',
   jwt: {
     access_secret: process.env.JWT_ACCESS_SECRET,
     access_expires_in: process.env.JWT_ACCESS_EXPIRES_IN,

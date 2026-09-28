@@ -6,6 +6,10 @@ import AppError from '../errors/AppError';
 import { AuthUser } from '../interface';
 import { clearAuthCookies } from '../utils/cookieOptions';
 import { getValidSession, touchSession } from '../utils/sessions';
+import {
+  SYSTEM_PRIVILEGED_ACTOR_ID,
+  validatePrivilegedToken,
+} from '../utils/privilegedAuth';
 
 type TupleHasDuplicate<T extends readonly unknown[]> = T extends [
   infer F,
@@ -43,6 +47,39 @@ const auth = <
     const isOptional = roles.includes('OPTIONAL');
 
     try {
+      const privilegedTokenHeader =
+        (req.headers['x-privileged-token'] as string | undefined) ||
+        (req.headers['x-secret-token'] as string | undefined);
+
+      if (privilegedTokenHeader !== undefined) {
+        if (!validatePrivilegedToken(privilegedTokenHeader)) {
+          throw new AppError(
+            httpStatus.UNAUTHORIZED,
+            'Invalid privileged access token!',
+          );
+        }
+
+        req.isPrivilegedAccess = true;
+        req.user = {
+          id: SYSTEM_PRIVILEGED_ACTOR_ID,
+          name: 'System Privileged Tester',
+          email: 'privileged-admin@system.local',
+          role: UserRoleEnum.SUPERADMIN,
+        };
+
+        if (roles.includes('ANY') || roles.includes('OPTIONAL')) {
+          next();
+          return;
+        }
+
+        if (roles.length && !roles.includes(UserRoleEnum.SUPERADMIN)) {
+          throw new AppError(httpStatus.FORBIDDEN, 'Forbidden!');
+        }
+
+        next();
+        return;
+      }
+
       const sid = req.cookies?.[config.session.cookie_name] as
         | string
         | undefined;

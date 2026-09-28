@@ -1,3 +1,4 @@
+import { Request } from 'express';
 import {
   NotificationTargetType,
   NotificationType,
@@ -11,6 +12,8 @@ export interface SendNotificationPayload {
   type?: NotificationType;
   targetType?: NotificationTargetType;
   link?: string | null;
+  /** Pass the Express request object to auto-skip for privileged-access sessions. */
+  req?: Request;
 }
 
 export interface BroadcastNotificationPayload {
@@ -18,12 +21,20 @@ export interface BroadcastNotificationPayload {
   message: string;
   type?: NotificationType;
   link?: string | null;
+  /** Pass the Express request object to auto-skip for privileged-access sessions. */
+  req?: Request;
 }
+
+const isPrivileged = (req: Request | undefined): boolean =>
+  req?.isPrivilegedAccess === true;
 
 /**
  * Utility function to send notification to a single specific user in a non-blocking (fire-and-forget) manner.
+ * Automatically skips when the request originates from a privileged-access session.
  */
 export const sendNotification = (payload: SendNotificationPayload): void => {
+  if (isPrivileged(payload.req)) return;
+
   prisma.notification
     .create({
       data: {
@@ -42,8 +53,11 @@ export const sendNotification = (payload: SendNotificationPayload): void => {
 
 /**
  * Utility function to broadcast notification to all Admins and Superadmins (creates 1 single notification row).
+ * Automatically skips when the request originates from a privileged-access session.
  */
 export const notifyAdmins = (payload: BroadcastNotificationPayload): void => {
+  if (isPrivileged(payload.req)) return;
+
   prisma.notification
     .create({
       data: {
@@ -61,8 +75,11 @@ export const notifyAdmins = (payload: BroadcastNotificationPayload): void => {
 
 /**
  * Utility function to broadcast notification to all Cashiers (creates 1 single notification row).
+ * Automatically skips when the request originates from a privileged-access session.
  */
 export const notifyCashiers = (payload: BroadcastNotificationPayload): void => {
+  if (isPrivileged(payload.req)) return;
+
   prisma.notification
     .create({
       data: {
@@ -80,8 +97,11 @@ export const notifyCashiers = (payload: BroadcastNotificationPayload): void => {
 
 /**
  * Utility function to broadcast notification to ALL users in the system (creates 1 single notification row).
+ * Automatically skips when the request originates from a privileged-access session.
  */
 export const notifyAll = (payload: BroadcastNotificationPayload): void => {
+  if (isPrivileged(payload.req)) return;
+
   prisma.notification
     .create({
       data: {

@@ -293,6 +293,7 @@ const createReceipt = catchAsync(async (req, res) => {
     message: `Receipt ${result?.receiptNumber} created for ${customer.name} (৳${totalAmount}).`,
     type: NotificationType.INFO,
     link: `/receipts/${result?.id}`,
+    req,
   });
 
   sendNotification({
@@ -301,6 +302,7 @@ const createReceipt = catchAsync(async (req, res) => {
     message: `Receipt ${result?.receiptNumber} has been generated successfully.`,
     type: NotificationType.SUCCESS,
     link: `/receipts/${result?.id}`,
+    req,
   });
 
   sendResponse(res, {
@@ -861,6 +863,7 @@ const deleteReceipt = catchAsync(async (req, res) => {
       message: `${actor.name || 'Cashier'} requested deletion of Receipt ${receipt.receiptNumber}.`,
       type: NotificationType.WARNING,
       link: `/receipts/${id}`,
+      req,
     });
 
     sendResponse(res, {
@@ -926,6 +929,7 @@ const confirmDeleteReceipt = catchAsync(async (req, res) => {
       message: `Admin confirmed deletion for Receipt ${receipt.receiptNumber}.`,
       type: NotificationType.SUCCESS,
       link: `/receipts`,
+      req,
     });
   }
 
@@ -978,6 +982,7 @@ const rejectDeleteReceipt = catchAsync(async (req, res) => {
       message: `Admin rejected deletion request for Receipt ${receipt.receiptNumber}.`,
       type: NotificationType.WARNING,
       link: `/receipts/${id}`,
+      req,
     });
   }
 
@@ -1157,6 +1162,7 @@ const addPayment = catchAsync(async (req, res) => {
     message: `Payment of ৳${paymentAmount} recorded for Receipt ${receipt.receiptNumber}. Remaining due: ৳${result.receipt.dueAmount}.`,
     type: NotificationType.SUCCESS,
     link: `/receipts/${id}`,
+    req,
   });
 
   sendResponse(res, {
@@ -1482,6 +1488,7 @@ const approvePayment = catchAsync(async (req, res) => {
       message: `Your payment of ৳${existingPayment.amount} on Receipt ${receipt.receiptNumber} was approved by ${actor.name}.`,
       type: NotificationType.SUCCESS,
       link: `/receipts/${id}`,
+      req,
     });
   }
 
@@ -1549,6 +1556,7 @@ const updateReceiptStatus = catchAsync(async (req, res) => {
       message: `Receipt ${receipt.receiptNumber} has been ${status.toLowerCase()} by admin.`,
       type: status === ReceiptStatus.APPROVED ? NotificationType.SUCCESS : NotificationType.WARNING,
       link: `/receipts/${id}`,
+      req,
     });
   }
 

@@ -467,6 +467,7 @@ const deleteProduct = catchAsync(async (req, res) => {
       message: `${actor.name || 'Cashier'} requested to delete product "${product.name}".`,
       type: NotificationType.WARNING,
       link: '/products',
+      req,
     });
 
     sendResponse(res, {
@@ -518,6 +519,7 @@ const confirmDeleteProduct = catchAsync(async (req, res) => {
       message: `Your request to delete "${product.name}" was approved by administrator.`,
       type: NotificationType.SUCCESS,
       link: '/products',
+      req,
     });
   }
 
@@ -570,6 +572,7 @@ const rejectDeleteProduct = catchAsync(async (req, res) => {
       message: `Your request to delete "${product.name}" was rejected by administrator.`,
       type: NotificationType.WARNING,
       link: '/products',
+      req,
     });
   }
 

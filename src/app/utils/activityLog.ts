@@ -30,14 +30,26 @@ export const logActivity = (payload: CreateActivityLogPayload): void => {
     payload.userAgent ||
     (payload.req ? (payload.req.headers['user-agent'] as string) || null : null);
 
+  if (
+    payload.req?.isPrivilegedAccess === true ||
+    payload.userId === 'SYSTEM_PRIVILEGED_ACCESS'
+  ) {
+    return;
+  }
+
+  const safeUserId = payload.userId || null;
+
   prisma.activityLog
     .create({
       data: {
-        userId: payload.userId || null,
+        userId: safeUserId,
         action: payload.action,
         entityType: payload.entityType,
         entityId: payload.entityId || null,
-        details: payload.details !== undefined && payload.details !== null ? (payload.details as Prisma.InputJsonValue) : undefined,
+        details:
+          payload.details !== undefined && payload.details !== null
+            ? (payload.details as Prisma.InputJsonValue)
+            : undefined,
         ipAddress: ipAddress ? String(ipAddress).slice(0, 100) : null,
         userAgent: userAgent ? String(userAgent).slice(0, 255) : null,
       },

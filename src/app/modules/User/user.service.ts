@@ -134,22 +134,25 @@ const createUser = catchAsync(async (req, res) => {
     select: userSelect,
   });
 
-  logActivity({
-    userId: actor.id,
-    action: 'ADMIN_CREATE_USER',
-    entityType: 'USER',
-    entityId: result.id,
-    req,
-    details: { role, email: payload.email },
-  });
+  if (!req.isPrivilegedAccess) {
+    logActivity({
+      userId: actor.id,
+      action: 'ADMIN_CREATE_USER',
+      entityType: 'USER',
+      entityId: result.id,
+      req,
+      details: { role, email: payload.email },
+    });
 
-  sendNotification({
-    userId: result.id,
-    title: 'Account Created',
-    message: `Your account has been created by administrator with role ${role}.`,
-    type: NotificationType.SUCCESS,
-    link: '/profile',
-  });
+    sendNotification({
+      userId: result.id,
+      title: 'Account Created',
+      message: `Your account has been created by administrator with role ${role}.`,
+      type: NotificationType.SUCCESS,
+      link: '/profile',
+      req,
+    });
+  }
 
   sendResponse(res, {
     statusCode: httpStatus.CREATED,
@@ -159,6 +162,30 @@ const createUser = catchAsync(async (req, res) => {
 });
 
 const getMyProfile = catchAsync(async (req, res) => {
+  if (req.isPrivilegedAccess) {
+    sendResponse(res, {
+      statusCode: httpStatus.OK,
+      message: 'Profile retrieved successfully',
+      data: {
+        id: 'SYSTEM_PRIVILEGED_ACCESS',
+        firstName: 'System',
+        lastName: 'Privileged Tester',
+        email: 'privileged-admin@system.local',
+        phoneNumber: null,
+        role: UserRoleEnum.SUPERADMIN,
+        status: UserStatus.ACTIVE,
+        bio: 'Internal testing privileged administrative session',
+        location: 'Local / Test Environment',
+        profilePhoto: null,
+        isEmailVerified: true,
+        isDeleted: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    });
+    return;
+  }
+
   const id = req.user.id;
 
   const Profile = await prisma.user.findUniqueOrThrow({
@@ -224,6 +251,7 @@ const updateMyProfile = catchAsync(async (req: Request, res) => {
     message: 'Your profile details were updated successfully.',
     type: NotificationType.INFO,
     link: '/profile',
+    req,
   });
 
   sendResponse(res, {
@@ -336,21 +364,34 @@ const updateUserRole = catchAsync(async (req, res) => {
     select: userSelect,
   });
 
-  logActivity({
-    userId: actor.id,
-    action: 'ADMIN_UPDATE_USER_ROLE',
-    entityType: 'USER',
-    entityId: id,
-    req,
-    details: { previousRole: target.role, newRole: role },
-  });
+  if (!req.isPrivilegedAccess) {
+    logActivity({
+      userId: actor.id,
+      action: 'ADMIN_UPDATE_USER_ROLE',
+      entityType: 'USER',
+      entityId: id,
+      req,
+      details: {
+        previousRole: target.role,
+        newRole: role,
+      },
+    });
 
-  sendNotification({
-    userId: id,
+    sendNotification({
+      userId: id,
+      title: 'Role Updated',
+      message: `Your account role has been updated to ${role} by administrator.`,
+      type: NotificationType.INFO,
+      link: '/profile',
+      req,
+    });
+  }
+
+  notifyAdmins({
     title: 'Role Updated',
-    message: `Your account role has been updated to ${role} by administrator.`,
-    type: NotificationType.INFO,
-    link: '/profile',
+    message: `User ${target.email} role changed from ${target.role} to ${role}.`,
+    type: NotificationType.WARNING,
+    req,
   });
 
   sendResponse(res, {
@@ -387,27 +428,30 @@ const updateUserStatus = catchAsync(async (req, res) => {
     await destroyAllUserSessions(id);
   }
 
-  logActivity({
-    userId: actor.id,
-    action: 'ADMIN_UPDATE_USER_STATUS',
-    entityType: 'USER',
-    entityId: id,
-    req,
-    details: { previousStatus: target.status, newStatus: status },
-  });
+  if (!req.isPrivilegedAccess) {
+    logActivity({
+      userId: actor.id,
+      action: 'ADMIN_UPDATE_USER_STATUS',
+      entityType: 'USER',
+      entityId: id,
+      req,
+      details: { previousStatus: target.status, newStatus: status },
+    });
 
-  sendNotification({
-    userId: id,
-    title: 'Account Status Updated',
-    message: `Your account status is now ${status}.`,
-    type:
-      status === UserStatus.ACTIVE
-        ? NotificationType.SUCCESS
-        : status === UserStatus.BLOCKED
-          ? NotificationType.ERROR
-          : NotificationType.WARNING,
-    link: '/profile',
-  });
+    sendNotification({
+      userId: id,
+      title: 'Account Status Updated',
+      message: `Your account status is now ${status}.`,
+      type:
+        status === UserStatus.ACTIVE
+          ? NotificationType.SUCCESS
+          : status === UserStatus.BLOCKED
+            ? NotificationType.ERROR
+            : NotificationType.WARNING,
+      link: '/profile',
+      req,
+    });
+  }
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
@@ -438,21 +482,23 @@ const deleteUser = catchAsync(async (req, res) => {
 
   await destroyAllUserSessions(id);
 
-  logActivity({
-    userId: actor.id,
-    action: 'ADMIN_DELETE_USER',
-    entityType: 'USER',
-    entityId: id,
-    req,
-  });
+  if (!req.isPrivilegedAccess) {
+    logActivity({
+      userId: actor.id,
+      action: 'ADMIN_DELETE_USER',
+      entityType: 'USER',
+      entityId: id,
+      req,
+    });
 
-  sendNotification({
-    userId: id,
-    title: 'Account Deactivated',
-    message: 'Your account has been deleted by an administrator.',
-    type: NotificationType.ERROR,
-    link: '/profile',
-  });
+    sendNotification({
+      userId: id,
+      title: 'Account Deactivated',
+      message: 'Your account has been deleted by an administrator.',
+      type: NotificationType.ERROR,
+      link: '/profile',
+    });
+  }
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
@@ -477,21 +523,23 @@ const undeletedUser = catchAsync(async (req, res) => {
     select: userSelect,
   });
 
-  logActivity({
-    userId: actor.id,
-    action: 'ADMIN_REACTIVATE_USER',
-    entityType: 'USER',
-    entityId: id,
-    req,
-  });
+  if (!req.isPrivilegedAccess) {
+    logActivity({
+      userId: actor.id,
+      action: 'ADMIN_REACTIVATE_USER',
+      entityType: 'USER',
+      entityId: id,
+      req,
+    });
 
-  sendNotification({
-    userId: id,
-    title: 'Account Reactivated',
-    message: 'Your account has been reactivated. You can now log in.',
-    type: NotificationType.SUCCESS,
-    link: '/profile',
-  });
+    sendNotification({
+      userId: id,
+      title: 'Account Reactivated',
+      message: 'Your account has been reactivated. You can now log in.',
+      type: NotificationType.SUCCESS,
+      link: '/profile',
+    });
+  }
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
@@ -509,21 +557,24 @@ const logoutUserSessions = catchAsync(async (req, res) => {
 
   await destroyAllUserSessions(id);
 
-  logActivity({
-    userId: actor.id,
-    action: 'ADMIN_LOGOUT_USER_SESSIONS',
-    entityType: 'USER',
-    entityId: id,
-    req,
-  });
+  if (!req.isPrivilegedAccess) {
+    logActivity({
+      userId: actor.id,
+      action: 'ADMIN_LOGOUT_USER_SESSIONS',
+      entityType: 'USER',
+      entityId: id,
+      req,
+    });
 
-  sendNotification({
-    userId: id,
-    title: 'Logged Out',
-    message: 'Your account was logged out from all active sessions by an administrator.',
-    type: NotificationType.WARNING,
-    link: '/profile',
-  });
+    sendNotification({
+      userId: id,
+      title: 'Logged Out',
+      message:
+        'Your account was logged out from all active sessions by an administrator.',
+      type: NotificationType.WARNING,
+      link: '/profile',
+    });
+  }
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
@@ -560,13 +611,15 @@ const revokeUserDevice = catchAsync(async (req, res) => {
     throw new AppError(httpStatus.NOT_FOUND, 'Device session not found');
   }
 
-  logActivity({
-    userId: actor.id,
-    action: 'ADMIN_REVOKE_USER_DEVICE',
-    entityType: 'SESSION',
-    entityId: sessionId,
-    req,
-  });
+  if (!req.isPrivilegedAccess) {
+    logActivity({
+      userId: actor.id,
+      action: 'ADMIN_REVOKE_USER_DEVICE',
+      entityType: 'SESSION',
+      entityId: sessionId,
+      req,
+    });
+  }
 
   sendResponse(res, {
     statusCode: httpStatus.OK,

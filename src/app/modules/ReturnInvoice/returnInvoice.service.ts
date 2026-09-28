@@ -414,6 +414,7 @@ const createReturnInvoice = catchAsync(async (req, res) => {
     message: `Return ${result?.returnNumber} created against Receipt ${receipt.receiptNumber} (৳${totalAmount}).`,
     type: NotificationType.INFO,
     link: `/return-invoices/${result?.id}`,
+    req,
   });
 
   sendNotification({
@@ -422,6 +423,7 @@ const createReturnInvoice = catchAsync(async (req, res) => {
     message: `Return ${result?.returnNumber} has been generated successfully.`,
     type: NotificationType.SUCCESS,
     link: `/return-invoices/${result?.id}`,
+    req,
   });
 
   sendResponse(res, {
@@ -944,6 +946,7 @@ const updateReturnInvoiceStatus = catchAsync(async (req, res) => {
       message: `Return ${existing.returnNumber} has been ${status.toLowerCase()} by admin.`,
       type: status === ReceiptStatus.APPROVED ? NotificationType.SUCCESS : NotificationType.WARNING,
       link: `/return-invoices/${id}`,
+      req,
     });
   }
 
@@ -1043,6 +1046,7 @@ const deleteReturnInvoice = catchAsync(async (req, res) => {
       message: `${actor.name || 'Cashier'} requested deletion of Return ${returnInvoice.returnNumber}.`,
       type: NotificationType.WARNING,
       link: `/return-invoices/${id}`,
+      req,
     });
 
     sendResponse(res, {
@@ -1097,6 +1101,7 @@ const confirmDeleteReturnInvoice = catchAsync(async (req, res) => {
       message: `Admin confirmed deletion for Return ${returnInvoice.returnNumber}.`,
       type: NotificationType.SUCCESS,
       link: `/return-invoices`,
+      req,
     });
   }
 
@@ -1144,6 +1149,7 @@ const rejectDeleteReturnInvoice = catchAsync(async (req, res) => {
       message: `Admin rejected deletion request for Return ${returnInvoice.returnNumber}.`,
       type: NotificationType.WARNING,
       link: `/return-invoices/${id}`,
+      req,
     });
   }
 

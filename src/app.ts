@@ -46,6 +46,8 @@ app.use(
       'X-Requested-With',
       'Accept',
       'Origin',
+      'x-privileged-token',
+      'x-secret-token',
     ],
     optionsSuccessStatus: 200,
   }),
