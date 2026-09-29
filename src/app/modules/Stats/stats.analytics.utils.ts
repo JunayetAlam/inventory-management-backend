@@ -1,4 +1,4 @@
-import { roundToTwo } from '../Receipt/receipt.utils';
+import { roundToTwo } from '../Invoice/invoice.utils';
 import {
   DASHBOARD_TZ,
   DASHBOARD_TZ_OFFSET,
@@ -7,13 +7,13 @@ import {
 } from './stats.constant';
 
 export interface AnalyticsLine {
-  receiptCreatedAt: Date;
+  invoiceCreatedAt: Date;
   productId: string;
   productName: string;
   quantity: number;
   totalPrice: number;
   sellingPrice: number;
-  /** Cost snapshot stored on the receipt item */
+  /** Cost snapshot stored on the invoice item */
   buyingPrice: number | null;
   /** Current product buying price (fallback when the snapshot is missing) */
   productBuyingPrice: number | null;
@@ -30,7 +30,7 @@ export interface LineResult {
  * netQty  = max(0, qty - returnedQty)
  * sales   = (totalPrice / qty) * netQty          (line discount included)
  * cost    = netQty * unitBuy
- * unitBuy = receipt item buyingPrice -> current product buyingPrice -> effective sell price
+ * unitBuy = invoice item buyingPrice -> current product buyingPrice -> effective sell price
  */
 export const computeLine = (line: AnalyticsLine): LineResult => {
   const qty = Number(line.quantity);
@@ -208,7 +208,7 @@ export const aggregateByMonth = (
   const buckets = new Map(monthKeys.map(k => [k, { sales: 0, cost: 0 }]));
 
   for (const line of lines) {
-    const bucket = buckets.get(toDhakaMonthKey(line.receiptCreatedAt));
+    const bucket = buckets.get(toDhakaMonthKey(line.invoiceCreatedAt));
     if (!bucket) continue;
     const r = computeLine(line);
     bucket.sales += r.sales;
@@ -272,7 +272,7 @@ export const resolveDashboardRange = (
   preset: DashboardPreset,
   todayStr: string,
   custom: { startDate?: string; endDate?: string },
-  firstReceiptDate: string | null,
+  firstInvoiceDate: string | null,
 ): { startDate: string; endDate: string } => {
   switch (preset) {
     case 'today':
@@ -286,7 +286,7 @@ export const resolveDashboardRange = (
     case 'month':
       return { startDate: `${todayStr.slice(0, 7)}-01`, endDate: todayStr };
     case 'all':
-      return { startDate: firstReceiptDate ?? todayStr, endDate: todayStr };
+      return { startDate: firstInvoiceDate ?? todayStr, endDate: todayStr };
     case 'custom': {
       const endDate =
         custom.endDate && custom.endDate < todayStr ? custom.endDate : todayStr;

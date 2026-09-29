@@ -3,16 +3,16 @@ import catchAsync from '../../utils/catchAsync';
 import sendResponse from '../../utils/sendResponse';
 import { prisma } from '../../utils/prisma';
 import { CustomerTransactionType, Prisma } from '../../../generated/prisma/client';
-import { roundToTwo } from '../Receipt/receipt.utils';
+import { roundToTwo } from '../Invoice/invoice.utils';
 
-// Helper to backfill historical receipts, payments, and return invoices into CustomerTransaction
+// Helper to backfill historical invoices, payments, and return invoices into CustomerTransaction
 export const syncMissingCustomerTransactions = async () => {
-  // 1. Backfill Receipts
-  const receiptsWithoutTx = await prisma.receipt.findMany({
+  // 1. Backfill Invoices
+  const invoicesWithoutTx = await prisma.invoice.findMany({
     where: {
       transactions: {
         none: {
-          type: CustomerTransactionType.RECEIPT,
+          type: CustomerTransactionType.INVOICE,
         },
       },
     },
@@ -26,29 +26,29 @@ export const syncMissingCustomerTransactions = async () => {
     },
   });
 
-  for (const r of receiptsWithoutTx) {
+  for (const r of invoicesWithoutTx) {
     await prisma.customerTransaction.create({
       data: {
         customerId: r.customerId,
-        type: CustomerTransactionType.RECEIPT,
-        receiptId: r.id,
+        type: CustomerTransactionType.INVOICE,
+        invoiceId: r.id,
         note: r.note || null,
         createdById: r.createdById || null,
         createdAt: r.createdAt,
       },
     });
 
-    // If initial payment was recorded without a ReceiptPayment record
+    // If initial payment was recorded without an InvoicePayment record
     if (r.paidAmount > 0) {
-      const existingPayment = await prisma.receiptPayment.findFirst({
-        where: { receiptId: r.id },
+      const existingPayment = await prisma.invoicePayment.findFirst({
+        where: { invoiceId: r.id },
       });
       if (!existingPayment) {
-        const payment = await prisma.receiptPayment.create({
+        const payment = await prisma.invoicePayment.create({
           data: {
-            receiptId: r.id,
+            invoiceId: r.id,
             amount: r.paidAmount,
-            note: 'Initial payment upon receipt creation',
+            note: 'Initial payment upon invoice creation',
             createdById: r.createdById || null,
             createdAt: r.createdAt,
           },
@@ -57,7 +57,7 @@ export const syncMissingCustomerTransactions = async () => {
           data: {
             customerId: r.customerId,
             type: CustomerTransactionType.PAYMENT,
-            receiptId: r.id,
+            invoiceId: r.id,
             paymentId: payment.id,
             note: payment.note,
             createdById: r.createdById || null,
@@ -68,8 +68,8 @@ export const syncMissingCustomerTransactions = async () => {
     }
   }
 
-  // 2. Backfill ReceiptPayments
-  const paymentsWithoutTx = await prisma.receiptPayment.findMany({
+  // 2. Backfill InvoicePayments
+  const paymentsWithoutTx = await prisma.invoicePayment.findMany({
     where: {
       transactions: {
         none: {
@@ -78,7 +78,7 @@ export const syncMissingCustomerTransactions = async () => {
       },
     },
     include: {
-      receipt: {
+      invoice: {
         select: {
           customerId: true,
         },
@@ -87,12 +87,12 @@ export const syncMissingCustomerTransactions = async () => {
   });
 
   for (const p of paymentsWithoutTx) {
-    if (p.receipt?.customerId) {
+    if (p.invoice?.customerId) {
       await prisma.customerTransaction.create({
         data: {
-          customerId: p.receipt.customerId,
+          customerId: p.invoice.customerId,
           type: CustomerTransactionType.PAYMENT,
-          receiptId: p.receiptId,
+          invoiceId: p.invoiceId,
           paymentId: p.id,
           note: p.note || null,
           createdById: p.createdById || null,
@@ -112,7 +112,7 @@ export const syncMissingCustomerTransactions = async () => {
       },
     },
     include: {
-      receipt: {
+      invoice: {
         select: {
           customerId: true,
         },
@@ -121,12 +121,12 @@ export const syncMissingCustomerTransactions = async () => {
   });
 
   for (const ret of returnsWithoutTx) {
-    if (ret.receipt?.customerId) {
+    if (ret.invoice?.customerId) {
       await prisma.customerTransaction.create({
         data: {
-          customerId: ret.receipt.customerId,
+          customerId: ret.invoice.customerId,
           type: CustomerTransactionType.RETURN_INVOICE,
-          receiptId: ret.receiptId,
+          invoiceId: ret.invoiceId,
           returnInvoiceId: ret.id,
           note: ret.note || null,
           createdById: ret.createdById || null,
@@ -168,7 +168,7 @@ const buildTransactionFilter = (query: Record<string, any>): Prisma.CustomerTran
       { note: { contains: term, mode: 'insensitive' } },
       { customer: { name: { contains: term, mode: 'insensitive' } } },
       { customer: { phoneNumber: { contains: term, mode: 'insensitive' } } },
-      { receipt: { receiptNumber: { contains: term, mode: 'insensitive' } } },
+      { invoice: { invoiceNumber: { contains: term, mode: 'insensitive' } } },
       { returnInvoice: { returnNumber: { contains: term, mode: 'insensitive' } } },
     ];
   }
@@ -213,10 +213,10 @@ const getAllCustomerTransactions = catchAsync(async (req, res) => {
             image: true,
           },
         },
-        receipt: {
+        invoice: {
           select: {
             id: true,
-            receiptNumber: true,
+            invoiceNumber: true,
             totalAmount: true,
             paidAmount: true,
             dueAmount: true,
@@ -228,11 +228,11 @@ const getAllCustomerTransactions = catchAsync(async (req, res) => {
         payment: {
           select: {
             id: true,
-            receiptId: true,
-            receipt: {
+            invoiceId: true,
+            invoice: {
               select: {
                 id: true,
-                receiptNumber: true,
+                invoiceNumber: true,
               },
             },
             amount: true,
@@ -252,11 +252,11 @@ const getAllCustomerTransactions = catchAsync(async (req, res) => {
           select: {
             id: true,
             returnNumber: true,
-            receiptId: true,
-            receipt: {
+            invoiceId: true,
+            invoice: {
               select: {
                 id: true,
-                receiptNumber: true,
+                invoiceNumber: true,
               },
             },
             refundedAmount: true,
@@ -297,7 +297,7 @@ const getAllCustomerTransactions = catchAsync(async (req, res) => {
         id: true,
         customerId: true,
         type: true,
-        receipt: {
+        invoice: {
           select: {
             totalAmount: true,
           },
@@ -327,8 +327,8 @@ const getAllCustomerTransactions = catchAsync(async (req, res) => {
       let txDue = 0;
       let txCash = 0;
 
-      if (rawTx.type === CustomerTransactionType.RECEIPT && rawTx.receipt) {
-        txDue = rawTx.receipt.totalAmount;
+      if (rawTx.type === CustomerTransactionType.INVOICE && rawTx.invoice) {
+        txDue = rawTx.invoice.totalAmount;
       } else if (rawTx.type === CustomerTransactionType.PAYMENT && rawTx.payment) {
         txCash = rawTx.payment.amount;
       } else if (rawTx.type === CustomerTransactionType.RETURN_INVOICE && rawTx.returnInvoice) {
@@ -351,17 +351,17 @@ const getAllCustomerTransactions = catchAsync(async (req, res) => {
     let cash = 0;
     let referenceNumber = '';
 
-    const effectiveReceipt = tx.receipt || tx.payment?.receipt || tx.returnInvoice?.receipt;
-    const effectiveReceiptId = tx.receiptId || tx.payment?.receiptId || tx.returnInvoice?.receiptId;
+    const effectiveInvoice = tx.invoice || tx.payment?.invoice || tx.returnInvoice?.invoice;
+    const effectiveInvoiceId = tx.invoiceId || tx.payment?.invoiceId || tx.returnInvoice?.invoiceId;
 
-    if (tx.type === CustomerTransactionType.RECEIPT && tx.receipt) {
-      due = tx.receipt.totalAmount;
+    if (tx.type === CustomerTransactionType.INVOICE && tx.invoice) {
+      due = tx.invoice.totalAmount;
       cash = 0;
-      referenceNumber = tx.receipt.receiptNumber;
+      referenceNumber = tx.invoice.invoiceNumber;
     } else if (tx.type === CustomerTransactionType.PAYMENT && tx.payment) {
       due = 0;
       cash = tx.payment.amount;
-      referenceNumber = effectiveReceipt?.receiptNumber ? `${effectiveReceipt.receiptNumber}` : 'Payment';
+      referenceNumber = effectiveInvoice?.invoiceNumber ? `${effectiveInvoice.invoiceNumber}` : 'Payment';
     } else if (tx.type === CustomerTransactionType.RETURN_INVOICE && tx.returnInvoice) {
       due = 0;
       const itemsTotal = (tx.returnInvoice.items || []).reduce((s, it) => s + it.totalPrice, 0);
@@ -375,8 +375,8 @@ const getAllCustomerTransactions = catchAsync(async (req, res) => {
 
     return {
       ...tx,
-      receiptId: effectiveReceiptId,
-      receipt: effectiveReceipt,
+      invoiceId: effectiveInvoiceId,
+      invoice: effectiveInvoice,
       due: roundToTwo(due),
       cash: roundToTwo(cash),
       balance: roundToTwo(balance),
@@ -418,7 +418,7 @@ const getCustomerTransactionStats = catchAsync(async (req, res) => {
     where,
     select: {
       type: true,
-      receipt: {
+      invoice: {
         select: {
           totalAmount: true,
         },
@@ -446,8 +446,8 @@ const getCustomerTransactionStats = catchAsync(async (req, res) => {
   let totalPayment = 0;
 
   for (const tx of matchingTxs) {
-    if (tx.type === CustomerTransactionType.RECEIPT && tx.receipt) {
-      totalDue = roundToTwo(totalDue + tx.receipt.totalAmount);
+    if (tx.type === CustomerTransactionType.INVOICE && tx.invoice) {
+      totalDue = roundToTwo(totalDue + tx.invoice.totalAmount);
     } else if (tx.type === CustomerTransactionType.PAYMENT && tx.payment) {
       totalPayment = roundToTwo(totalPayment + tx.payment.amount);
     } else if (tx.type === CustomerTransactionType.RETURN_INVOICE && tx.returnInvoice) {

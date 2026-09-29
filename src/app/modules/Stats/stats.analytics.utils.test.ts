@@ -13,7 +13,7 @@ import {
 } from './stats.analytics.utils';
 
 const line = (over: Partial<AnalyticsLine> = {}): AnalyticsLine => ({
-  receiptCreatedAt: new Date('2026-09-10T06:00:00.000Z'),
+  invoiceCreatedAt: new Date('2026-09-10T06:00:00.000Z'),
   productId: 'p1',
   productName: 'P1',
   quantity: 10,
@@ -26,7 +26,7 @@ const line = (over: Partial<AnalyticsLine> = {}): AnalyticsLine => ({
 });
 
 describe('computeLine', () => {
-  test('uses receipt item buying price', () => {
+  test('uses invoice item buying price', () => {
     expect(computeLine(line())).toEqual({ netQty: 10, sales: 1000, cost: 600 });
   });
   test('returns reduce both sales and cost', () => {
@@ -79,7 +79,7 @@ describe('monthly buckets (Asia/Dhaka)', () => {
       [
         line(),
         line({
-          receiptCreatedAt: new Date('2026-08-10T06:00:00.000Z'),
+          invoiceCreatedAt: new Date('2026-08-10T06:00:00.000Z'),
           buyingPrice: 150, // loss month
         }),
       ],
@@ -114,7 +114,7 @@ describe('resolveDashboardRange', () => {
       endDate: '2026-09-20',
     });
   });
-  test('all uses first receipt; custom clamps future end', () => {
+  test('all uses first invoice; custom clamps future end', () => {
     expect(
       resolveDashboardRange('all', '2026-09-20', {}, '2025-01-05').startDate,
     ).toBe('2025-01-05');

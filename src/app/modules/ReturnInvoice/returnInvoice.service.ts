@@ -7,7 +7,7 @@ import AppError from '../../errors/AppError';
 import {
   CustomerTransactionType,
   NotificationType,
-  ReceiptStatus,
+  InvoiceStatus,
   UserRoleEnum,
 } from '../../../generated/prisma/client';
 import { logActivity } from '../../utils/activityLog';
@@ -17,11 +17,11 @@ import {
   deductStockForProductItems,
   restoreStockForProductItems,
   roundToTwo,
-} from '../Receipt/receipt.utils';
+} from '../Invoice/invoice.utils';
 import { returnInvoiceSearchableFields } from './returnInvoice.constant';
 import {
   deriveMoneyForReturnInvoice,
-  deriveReceiptSettlement,
+  deriveInvoiceSettlement,
   deriveReturnMoney,
   generateReturnNumber,
   getLatestActiveReturn,
@@ -30,7 +30,7 @@ import {
   getReturnedQtyMap,
   hasNewerActiveReturn,
   isLatestActiveReturn,
-  sumActiveReturnMoneyOnReceipt,
+  sumActiveReturnMoneyOnInvoice,
   sumAncestorReturnMoney,
   withDerivedReturnMoney,
 } from './returnInvoice.utils';
@@ -54,10 +54,10 @@ const previousReturnInclude = {
 } as const;
 
 const returnInvoiceInclude = {
-  receipt: {
+  invoice: {
     select: {
       id: true,
-      receiptNumber: true,
+      invoiceNumber: true,
       customerId: true,
       totalAmount: true,
       paidAmount: true,
@@ -80,7 +80,7 @@ const returnInvoiceInclude = {
       product: {
         select: { id: true, name: true, stock: true, unit: true },
       },
-      receiptItem: {
+      invoiceItem: {
         select: {
           id: true,
           productName: true,
@@ -104,15 +104,15 @@ const returnInvoiceInclude = {
 } as const;
 
 type ReturnPayloadItem = {
-  receiptItemId: string;
+  invoiceItemId: string;
   quantity: number;
   sellingPrice?: number;
   discounts?: number[];
   discount?: number;
 };
 
-const enrichReturnItemsFromReceipt = async (
-  receiptId: string,
+const enrichReturnItemsFromInvoice = async (
+  invoiceId: string,
   items: ReturnPayloadItem[],
   excludeReturnInvoiceId?: string,
 ) => {
@@ -121,24 +121,24 @@ const enrichReturnItemsFromReceipt = async (
     throw new AppError(httpStatus.BAD_REQUEST, uniquenessError);
   }
 
-  const receipt = await prisma.receipt.findUnique({
-    where: { id: receiptId },
+  const invoice = await prisma.invoice.findUnique({
+    where: { id: invoiceId },
     include: { items: true },
   });
 
-  if (!receipt || receipt.isDeleted) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Source receipt not found or is deleted');
+  if (!invoice || invoice.isDeleted) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Source invoice not found or is deleted');
   }
 
-  const receiptItemMap = new Map(receipt.items.map(it => [it.id, it]));
-  const returnedMap = await getReturnedQtyMap(prisma, receiptId, excludeReturnInvoiceId);
+  const invoiceItemMap = new Map(invoice.items.map(it => [it.id, it]));
+  const returnedMap = await getReturnedQtyMap(prisma, invoiceId, excludeReturnInvoiceId);
 
   const enriched = items.map(it => {
-    const source = receiptItemMap.get(it.receiptItemId);
+    const source = invoiceItemMap.get(it.invoiceItemId);
     if (!source) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        `Receipt item ${it.receiptItemId} does not belong to the selected receipt`,
+        `Invoice item ${it.invoiceItemId} does not belong to the selected invoice`,
       );
     }
 
@@ -160,8 +160,8 @@ const enrichReturnItemsFromReceipt = async (
     }
 
     return {
-      receiptItemId: source.id,
-      receiptId: receipt.id,
+      invoiceItemId: source.id,
+      invoiceId: invoice.id,
       productId: source.productId,
       productName: source.productName,
       unit: source.unit,
@@ -171,18 +171,18 @@ const enrichReturnItemsFromReceipt = async (
     };
   });
 
-  return { receipt, enriched };
+  return { invoice, enriched };
 };
 
 const assertLatestForMutation = async (
-  returnInvoice: { id: string; receiptId: string; isDeleted?: boolean },
+  returnInvoice: { id: string; invoiceId: string; isDeleted?: boolean },
   action: 'edited' | 'deleted',
 ) => {
   const latest = await isLatestActiveReturn(prisma, returnInvoice);
   if (!latest) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      `Only the latest return invoice on this receipt can be ${action}`,
+      `Only the latest return invoice on this invoice can be ${action}`,
     );
   }
 };
@@ -191,7 +191,7 @@ const hydrateReturnInvoice = async <
   T extends {
     id: string;
     previousReturnInvoiceId?: string | null;
-    receipt?: {
+    invoice?: {
       totalAmount?: number;
       paidAmount?: number;
     } | null;
@@ -215,17 +215,17 @@ const hydrateReturnInvoice = async <
     cache,
   );
   // Position before this return (ancestors only) — UI shows only due/refundable
-  const beforeThis = deriveReceiptSettlement({
-    receiptTotal: invoice.receipt?.totalAmount ?? 0,
-    paidAmount: invoice.receipt?.paidAmount ?? 0,
+  const beforeThis = deriveInvoiceSettlement({
+    invoiceTotal: invoice.invoice?.totalAmount ?? 0,
+    paidAmount: invoice.invoice?.paidAmount ?? 0,
     creditsBefore: ancestorMoney.credits,
     thisCredit: 0,
     refundedBefore: ancestorMoney.refunded,
     thisRefunded: 0,
   });
-  const afterThis = deriveReceiptSettlement({
-    receiptTotal: invoice.receipt?.totalAmount ?? 0,
-    paidAmount: invoice.receipt?.paidAmount ?? 0,
+  const afterThis = deriveInvoiceSettlement({
+    invoiceTotal: invoice.invoice?.totalAmount ?? 0,
+    paidAmount: invoice.invoice?.paidAmount ?? 0,
     creditsBefore: ancestorMoney.credits,
     thisCredit: money.totalAmount,
     refundedBefore: ancestorMoney.refunded,
@@ -245,26 +245,26 @@ const hydrateReturnInvoice = async <
   };
 };
 
-const hydrateReturnInvoiceList = async <T extends { id: string; receiptId: string; createdAt: Date; isDeleted: boolean }>(
+const hydrateReturnInvoiceList = async <T extends { id: string; invoiceId: string; createdAt: Date; isDeleted: boolean }>(
   rows: T[],
 ) => {
   if (!rows.length) return [];
 
   const cache = new Map();
-  const receiptIds = [...new Set(rows.map(r => r.receiptId))];
+  const invoiceIds = [...new Set(rows.map(r => r.invoiceId))];
 
-  const latestByReceipt = new Map<string, string>();
+  const latestByInvoice = new Map<string, string>();
   await Promise.all(
-    receiptIds.map(async receiptId => {
-      const latest = await getLatestActiveReturn(prisma, receiptId, { select: { id: true } });
-      if (latest) latestByReceipt.set(receiptId, latest.id);
+    invoiceIds.map(async invoiceId => {
+      const latest = await getLatestActiveReturn(prisma, invoiceId, { select: { id: true } });
+      if (latest) latestByInvoice.set(invoiceId, latest.id);
     }),
   );
 
   const result = [];
   for (const row of rows) {
     const money = await deriveMoneyForReturnInvoice(prisma, row.id, cache);
-    const isLatest = !row.isDeleted && latestByReceipt.get(row.receiptId) === row.id;
+    const isLatest = !row.isDeleted && latestByInvoice.get(row.invoiceId) === row.id;
     const canRestore =
       row.isDeleted && !(await hasNewerActiveReturn(prisma, row));
 
@@ -278,22 +278,22 @@ const hydrateReturnInvoiceList = async <T extends { id: string; receiptId: strin
 };
 
 /**
- * Create a return invoice under a source receipt. Restores product stock.
+ * Create a return invoice under a source invoice. Restores product stock.
  * Money fields are derived from product lines + previous tip due (not persisted).
  */
 const createReturnInvoice = catchAsync(async (req, res) => {
   const actor = req.user;
   const {
-    receiptId,
+    invoiceId,
     items,
     discount = 0,
     note,
   } = req.body;
   const refundedAmountInput = req.body.refundedAmount;
 
-  const { receipt, enriched } = await enrichReturnItemsFromReceipt(receiptId, items);
+  const { invoice, enriched } = await enrichReturnItemsFromInvoice(invoiceId, items);
 
-  const previous = await getLatestActiveReturn(prisma, receiptId, {
+  const previous = await getLatestActiveReturn(prisma, invoiceId, {
     include: {
       items: {
         select: {
@@ -345,11 +345,11 @@ const createReturnInvoice = catchAsync(async (req, res) => {
     const returnInvoice = await tx.returnInvoice.create({
       data: {
         returnNumber,
-        receiptId: receipt.id,
+        invoiceId: invoice.id,
         previousReturnInvoiceId: previous?.id || null,
         discount: totalDiscount,
         refundedAmount: settledRefunded,
-        status: ReceiptStatus.PENDING,
+        status: InvoiceStatus.PENDING,
         note: note || null,
         createdById: actor.id,
         updatedById: actor.id,
@@ -359,8 +359,8 @@ const createReturnInvoice = catchAsync(async (req, res) => {
     await tx.returnInvoiceItem.createMany({
       data: calculatedItems.map(item => ({
         returnInvoiceId: returnInvoice.id,
-        receiptId: item.receiptId,
-        receiptItemId: item.receiptItemId,
+        invoiceId: item.invoiceId,
+        invoiceItemId: item.invoiceItemId,
         productId: item.productId,
         productName: item.productName,
         unit: item.unit,
@@ -374,9 +374,9 @@ const createReturnInvoice = catchAsync(async (req, res) => {
     // Create CustomerTransaction for Return Invoice
     await tx.customerTransaction.create({
       data: {
-        customerId: receipt.customerId,
+        customerId: invoice.customerId,
         type: CustomerTransactionType.RETURN_INVOICE,
-        receiptId: receipt.id,
+        invoiceId: invoice.id,
         returnInvoiceId: returnInvoice.id,
         note: note || null,
         createdById: actor.id,
@@ -399,8 +399,8 @@ const createReturnInvoice = catchAsync(async (req, res) => {
     req,
     details: {
       returnNumber: result?.returnNumber,
-      receiptId: receipt.id,
-      receiptNumber: receipt.receiptNumber,
+      invoiceId: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
       totalAmount,
       previousDueAmount: settledPreviousDue,
       dueRefundAmount,
@@ -411,7 +411,7 @@ const createReturnInvoice = catchAsync(async (req, res) => {
 
   notifyAdmins({
     title: 'Return Invoice Created',
-    message: `Return ${result?.returnNumber} created against Receipt ${receipt.receiptNumber} (৳${totalAmount}).`,
+    message: `Return ${result?.returnNumber} created against Invoice ${invoice.invoiceNumber} (৳${totalAmount}).`,
     type: NotificationType.INFO,
     link: `/return-invoices/${result?.id}`,
     req,
@@ -467,7 +467,7 @@ const getAllReturnInvoices = catchAsync(async (req, res) => {
     .customFields({
       id: true,
       returnNumber: true,
-      receiptId: true,
+      invoiceId: true,
       previousReturnInvoiceId: true,
       discount: true,
       refundedAmount: true,
@@ -487,10 +487,10 @@ const getAllReturnInvoices = catchAsync(async (req, res) => {
           totalPrice: true,
         },
       },
-      receipt: {
+      invoice: {
         select: {
           id: true,
-          receiptNumber: true,
+          invoiceNumber: true,
           customer: {
             select: {
               id: true,
@@ -556,17 +556,17 @@ const getReturnInvoiceById = catchAsync(async (req, res) => {
 });
 
 /**
- * Returnable lines for a receipt + previous (latest active) return money summary.
+ * Returnable lines for an invoice + previous (latest active) return money summary.
  */
-const getReturnableItemsByReceipt = catchAsync(async (req, res) => {
-  const { receiptId } = req.params;
+const getReturnableItemsByInvoice = catchAsync(async (req, res) => {
+  const { invoiceId } = req.params;
   const excludeReturnInvoiceId =
     typeof req.query.excludeReturnInvoiceId === 'string'
       ? req.query.excludeReturnInvoiceId
       : undefined;
 
-  const receipt = await prisma.receipt.findUnique({
-    where: { id: receiptId },
+  const invoice = await prisma.invoice.findUnique({
+    where: { id: invoiceId },
     include: {
       items: {
         include: {
@@ -586,21 +586,21 @@ const getReturnableItemsByReceipt = catchAsync(async (req, res) => {
     },
   });
 
-  if (!receipt || receipt.isDeleted) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Receipt not found or is deleted');
+  if (!invoice || invoice.isDeleted) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Invoice not found or is deleted');
   }
 
   const returnedMap = await getReturnedQtyMap(
     prisma,
-    receiptId,
+    invoiceId,
     excludeReturnInvoiceId,
   );
 
-  const items = receipt.items.map(it => {
+  const items = invoice.items.map(it => {
     const alreadyReturned = returnedMap.get(it.id) || 0;
     const remainingReturnable = roundToTwo(Math.max(0, it.quantity - alreadyReturned));
     return {
-      receiptItemId: it.id,
+      invoiceItemId: it.id,
       productId: it.productId,
       productName: it.productName,
       unit: it.unit,
@@ -615,7 +615,7 @@ const getReturnableItemsByReceipt = catchAsync(async (req, res) => {
 
   // When editing, previous tip is the latest active excluding the invoice being edited
   let previousReturn = null as null | Record<string, unknown>;
-  const latestActive = await getLatestActiveReturn(prisma, receiptId, {
+  const latestActive = await getLatestActiveReturn(prisma, invoiceId, {
     include: {
       items: {
         select: {
@@ -668,14 +668,14 @@ const getReturnableItemsByReceipt = catchAsync(async (req, res) => {
     }
   }
 
-  const priorMoney = await sumActiveReturnMoneyOnReceipt(
+  const priorMoney = await sumActiveReturnMoneyOnInvoice(
     prisma,
-    receiptId,
+    invoiceId,
     excludeReturnInvoiceId,
   );
-  const beforeThis = deriveReceiptSettlement({
-    receiptTotal: receipt.totalAmount,
-    paidAmount: receipt.paidAmount,
+  const beforeThis = deriveInvoiceSettlement({
+    invoiceTotal: invoice.totalAmount,
+    paidAmount: invoice.paidAmount,
     creditsBefore: priorMoney.credits,
     thisCredit: 0,
     refundedBefore: priorMoney.refunded,
@@ -684,15 +684,15 @@ const getReturnableItemsByReceipt = catchAsync(async (req, res) => {
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
-    message: 'Returnable receipt items retrieved successfully',
+    message: 'Returnable invoice items retrieved successfully',
     data: {
-      receipt: {
-        id: receipt.id,
-        receiptNumber: receipt.receiptNumber,
-        customer: receipt.customer,
-        totalAmount: receipt.totalAmount,
-        paidAmount: receipt.paidAmount,
-        dueAmount: receipt.dueAmount,
+      invoice: {
+        id: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        customer: invoice.customer,
+        totalAmount: invoice.totalAmount,
+        paidAmount: invoice.paidAmount,
+        dueAmount: invoice.dueAmount,
       },
       items,
       previousReturn,
@@ -724,7 +724,7 @@ const updateReturnInvoice = catchAsync(async (req, res) => {
   await assertLatestForMutation(existing, 'edited');
 
   if (
-    existing.status === ReceiptStatus.APPROVED &&
+    existing.status === InvoiceStatus.APPROVED &&
     actor.role === UserRoleEnum.CASHIER
   ) {
     throw new AppError(
@@ -753,8 +753,8 @@ const updateReturnInvoice = catchAsync(async (req, res) => {
         : existing.refundedAmount;
 
     if (payload.items && Array.isArray(payload.items)) {
-      const { enriched } = await enrichReturnItemsFromReceipt(
-        existing.receiptId,
+      const { enriched } = await enrichReturnItemsFromInvoice(
+        existing.invoiceId,
         payload.items,
         existing.id,
       );
@@ -813,8 +813,8 @@ const updateReturnInvoice = catchAsync(async (req, res) => {
       await tx.returnInvoiceItem.createMany({
         data: totals.calculatedItems.map(item => ({
           returnInvoiceId: id,
-          receiptId: item.receiptId,
-          receiptItemId: item.receiptItemId,
+          invoiceId: item.invoiceId,
+          invoiceItemId: item.invoiceItemId,
           productId: item.productId,
           productName: item.productName,
           unit: item.unit,
@@ -827,8 +827,8 @@ const updateReturnInvoice = catchAsync(async (req, res) => {
     } else if (payload.discount !== undefined || payload.refundedAmount !== undefined) {
       const totals = deriveReturnMoney(
         existing.items.map(it => ({
-          receiptItemId: it.receiptItemId,
-          receiptId: it.receiptId,
+          invoiceItemId: it.invoiceItemId,
+          invoiceId: it.invoiceId,
           productId: it.productId,
           productName: it.productName,
           unit: it.unit,
@@ -928,7 +928,7 @@ const updateReturnInvoiceStatus = catchAsync(async (req, res) => {
 
   logActivity({
     userId: actor.id,
-    action: status === ReceiptStatus.APPROVED ? 'APPROVE_RETURN_INVOICE' : 'REJECT_RETURN_INVOICE',
+    action: status === InvoiceStatus.APPROVED ? 'APPROVE_RETURN_INVOICE' : 'REJECT_RETURN_INVOICE',
     entityType: 'RETURN_INVOICE',
     entityId: id,
     req,
@@ -944,7 +944,7 @@ const updateReturnInvoiceStatus = catchAsync(async (req, res) => {
       userId: existing.createdById,
       title: `Return Invoice ${status}`,
       message: `Return ${existing.returnNumber} has been ${status.toLowerCase()} by admin.`,
-      type: status === ReceiptStatus.APPROVED ? NotificationType.SUCCESS : NotificationType.WARNING,
+      type: status === InvoiceStatus.APPROVED ? NotificationType.SUCCESS : NotificationType.WARNING,
       link: `/return-invoices/${id}`,
       req,
     });
@@ -1162,7 +1162,7 @@ const rejectDeleteReturnInvoice = catchAsync(async (req, res) => {
 
 /**
  * Restore soft-deleted return invoice and re-apply stock restore.
- * Blocked when a newer active return already exists on the receipt.
+ * Blocked when a newer active return already exists on the invoice.
  */
 const restoreReturnInvoice = catchAsync(async (req, res) => {
   const { id } = req.params;
@@ -1180,14 +1180,14 @@ const restoreReturnInvoice = catchAsync(async (req, res) => {
   if (await hasNewerActiveReturn(prisma, returnInvoice)) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'Cannot restore; a newer return invoice already exists on this receipt',
+      'Cannot restore; a newer return invoice already exists on this invoice',
     );
   }
 
-  const { enriched } = await enrichReturnItemsFromReceipt(
-    returnInvoice.receiptId,
+  const { enriched } = await enrichReturnItemsFromInvoice(
+    returnInvoice.invoiceId,
     returnInvoice.items.map(it => ({
-      receiptItemId: it.receiptItemId,
+      invoiceItemId: it.invoiceItemId,
       quantity: it.quantity,
       sellingPrice: it.sellingPrice,
       discounts: it.discounts,
@@ -1235,7 +1235,7 @@ export const ReturnInvoiceServices = {
   createReturnInvoice,
   getAllReturnInvoices,
   getReturnInvoiceById,
-  getReturnableItemsByReceipt,
+  getReturnableItemsByInvoice,
   updateReturnInvoice,
   updateReturnInvoiceStatus,
   deleteReturnInvoice,

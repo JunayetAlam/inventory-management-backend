@@ -20,7 +20,7 @@ model Customer {
   createdBy           User?     @relation("CustomerCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   updatedBy           User?     @relation("CustomerUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
 
-  receipts            Receipt[]
+  invoices            Invoice[]
   transactions        CustomerTransaction[]
 
   createdAt           DateTime  @default(now())

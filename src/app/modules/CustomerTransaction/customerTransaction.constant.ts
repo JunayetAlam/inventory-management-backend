@@ -2,7 +2,7 @@ export const customerTransactionSearchableFields = [
   'note',
   'customer.name',
   'customer.phoneNumber',
-  'receipt.receiptNumber',
+  'invoice.invoiceNumber',
   'returnInvoice.returnNumber',
 ];
 

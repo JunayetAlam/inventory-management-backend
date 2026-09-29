@@ -1,4 +1,4 @@
-import { roundToTwo } from '../Receipt/receipt.utils';
+import { roundToTwo } from '../Invoice/invoice.utils';
 import { PRODUCT_PROFIT_DATE_TZ_OFFSET } from './product.constant';
 import type { ProductProfitSortField } from './product.constant';
 
@@ -29,10 +29,10 @@ export const buildCreatedAtRange = (
   return range;
 };
 
-export interface ProductProfitReceiptRef {
+export interface ProductProfitInvoiceRef {
   id: string;
-  receiptNumber: string;
-  /** Net sold qty of this product on that receipt (after in-range returns) */
+  invoiceNumber: string;
+  /** Net sold qty of this product on that invoice (after in-range returns) */
   quantity: number;
 }
 
@@ -45,7 +45,7 @@ export interface ProductProfitAgg {
   purchaseCost: number;
   /** Qty where buyingPrice was missing and sell unit price was used as cost */
   assumedBuyFromSellQty: number;
-  receiptsById: Map<string, { receiptNumber: string; quantity: number }>;
+  invoicesById: Map<string, { invoiceNumber: string; quantity: number }>;
 }
 
 export interface ProductProfitRow {
@@ -60,7 +60,7 @@ export interface ProductProfitRow {
   avgSale: number | null;
   profit: number;
   profitPercent: number | null;
-  receipts: ProductProfitReceiptRef[];
+  invoices: ProductProfitInvoiceRef[];
 }
 
 export const emptyProductAgg = (
@@ -75,7 +75,7 @@ export const emptyProductAgg = (
   salesTotal: 0,
   purchaseCost: 0,
   assumedBuyFromSellQty: 0,
-  receiptsById: new Map(),
+  invoicesById: new Map(),
 });
 
 /**
@@ -83,7 +83,7 @@ export const emptyProductAgg = (
  * When buyingPrice is missing, cost uses selling price per unit (zero profit on that qty).
  * @returns netQty contributed (0 if nothing counted)
  */
-export const contributeReceiptLine = (
+export const contributeInvoiceLine = (
   agg: ProductProfitAgg,
   line: {
     quantity: number;
@@ -92,7 +92,7 @@ export const contributeReceiptLine = (
     buyingPrice: number | null;
   },
   returnedQty: number,
-  receipt?: { id: string; receiptNumber: string },
+  invoice?: { id: string; invoiceNumber: string },
 ): number => {
   const qty = Number(line.quantity) || 0;
   if (qty <= 0) return 0;
@@ -120,13 +120,13 @@ export const contributeReceiptLine = (
     );
   }
 
-  if (receipt?.id && receipt.receiptNumber) {
-    const existing = agg.receiptsById.get(receipt.id);
+  if (invoice?.id && invoice.invoiceNumber) {
+    const existing = agg.invoicesById.get(invoice.id);
     if (existing) {
       existing.quantity = roundToTwo(existing.quantity + netQty);
     } else {
-      agg.receiptsById.set(receipt.id, {
-        receiptNumber: receipt.receiptNumber,
+      agg.invoicesById.set(invoice.id, {
+        invoiceNumber: invoice.invoiceNumber,
         quantity: netQty,
       });
     }
@@ -142,15 +142,15 @@ export const finalizeProductRow = (agg: ProductProfitAgg): ProductProfitRow => {
   const assumedBuyFromSellQty = roundToTwo(agg.assumedBuyFromSellQty);
   const profit = roundToTwo(salesTotal - purchaseCost);
 
-  const receipts: ProductProfitReceiptRef[] = Array.from(
-    agg.receiptsById.entries(),
+  const invoices: ProductProfitInvoiceRef[] = Array.from(
+    agg.invoicesById.entries(),
   )
     .map(([id, ref]) => ({
       id,
-      receiptNumber: ref.receiptNumber,
+      invoiceNumber: ref.invoiceNumber,
       quantity: roundToTwo(ref.quantity),
     }))
-    .sort((a, b) => a.receiptNumber.localeCompare(b.receiptNumber));
+    .sort((a, b) => a.invoiceNumber.localeCompare(b.invoiceNumber));
 
   return {
     productId: agg.productId,
@@ -165,7 +165,7 @@ export const finalizeProductRow = (agg: ProductProfitAgg): ProductProfitRow => {
     profit,
     profitPercent:
       salesTotal > 0 ? roundToTwo((profit / salesTotal) * 100) : null,
-    receipts,
+    invoices,
   };
 };
 

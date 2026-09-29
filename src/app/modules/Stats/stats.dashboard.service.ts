@@ -2,7 +2,7 @@ import httpStatus from 'http-status';
 import catchAsync from '../../utils/catchAsync';
 import sendResponse from '../../utils/sendResponse';
 import { prisma } from '../../utils/prisma';
-import { ReceiptStatus } from '../../../generated/prisma/client';
+import { InvoiceStatus } from '../../../generated/prisma/client';
 import {
   DASHBOARD_TZ,
   DASHBOARD_TZ_OFFSET,
@@ -30,7 +30,7 @@ import {
 } from './stats.validation';
 
 /**
- * Loads receipt lines (with returned qty) for receipts created in [gte, lte].
+ * Loads invoice lines (with returned qty) for invoices created in [gte, lte].
  * Same eligibility as the product profit report: not deleted, not rejected,
  * product-linked lines, returns (not deleted/rejected) created in the same range.
  */
@@ -41,10 +41,10 @@ const loadAnalyticsLines = async (
   const createdAt =
     gte || lte ? { ...(gte ? { gte } : {}), ...(lte ? { lte } : {}) } : undefined;
 
-  const receipts = await prisma.receipt.findMany({
+  const invoices = await prisma.invoice.findMany({
     where: {
       isDeleted: false,
-      status: { not: ReceiptStatus.REJECTED },
+      status: { not: InvoiceStatus.REJECTED },
       ...(createdAt ? { createdAt } : {}),
     },
     select: {
@@ -65,32 +65,32 @@ const loadAnalyticsLines = async (
     },
   });
 
-  const itemIds = receipts.flatMap(r => r.items.map(i => i.id));
+  const itemIds = invoices.flatMap(r => r.items.map(i => i.id));
   const returnedByItem = new Map<string, number>();
 
   if (itemIds.length > 0) {
     const returnRows = await prisma.returnInvoiceItem.findMany({
       where: {
-        receiptItemId: { in: itemIds },
+        invoiceItemId: { in: itemIds },
         returnInvoice: {
           isDeleted: false,
-          status: { not: ReceiptStatus.REJECTED },
+          status: { not: InvoiceStatus.REJECTED },
           ...(createdAt ? { createdAt } : {}),
         },
       },
-      select: { receiptItemId: true, quantity: true },
+      select: { invoiceItemId: true, quantity: true },
     });
     for (const row of returnRows) {
       returnedByItem.set(
-        row.receiptItemId,
-        (returnedByItem.get(row.receiptItemId) || 0) + Number(row.quantity),
+        row.invoiceItemId,
+        (returnedByItem.get(row.invoiceItemId) || 0) + Number(row.quantity),
       );
     }
   }
 
-  return receipts.flatMap(r =>
+  return invoices.flatMap(r =>
     r.items.map(item => ({
-      receiptCreatedAt: r.createdAt,
+      invoiceCreatedAt: r.createdAt,
       productId: item.productId as string,
       productName: item.product?.name || item.productName,
       quantity: item.quantity,
@@ -122,21 +122,21 @@ const getDashboardSummary = catchAsync(async (req, res) => {
   const query = parseDashboardQuery(req.query);
   const todayStr = toDhakaDateString(new Date());
 
-  let firstReceiptDate: string | null = null;
+  let firstInvoiceDate: string | null = null;
   if (query.preset === 'all') {
-    const first = await prisma.receipt.findFirst({
-      where: { isDeleted: false, status: { not: ReceiptStatus.REJECTED } },
+    const first = await prisma.invoice.findFirst({
+      where: { isDeleted: false, status: { not: InvoiceStatus.REJECTED } },
       orderBy: { createdAt: 'asc' },
       select: { createdAt: true },
     });
-    firstReceiptDate = first ? toDhakaDateString(first.createdAt) : null;
+    firstInvoiceDate = first ? toDhakaDateString(first.createdAt) : null;
   }
 
   const { startDate, endDate } = resolveDashboardRange(
     query.preset,
     todayStr,
     query,
-    firstReceiptDate,
+    firstInvoiceDate,
   );
   const { gte, lte } = dayRange(startDate, endDate);
 

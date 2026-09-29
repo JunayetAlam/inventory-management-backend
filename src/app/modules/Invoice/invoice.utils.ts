@@ -66,7 +66,7 @@ export const applyStockDeltaMap = async (
   }
 };
 
-/** Restore stock for receipt delete / return create (+qty). */
+/** Restore stock for invoice delete / return create (+qty). */
 export const restoreStockForProductItems = async (
   tx: any,
   items: { productId?: string | null; quantity: number }[],
@@ -78,7 +78,7 @@ export const restoreStockForProductItems = async (
   }
 };
 
-/** Deduct stock for receipt create / restore receipt / return delete (-qty). */
+/** Deduct stock for invoice create / restore invoice / return delete (-qty). */
 export const deductStockForProductItems = async (
   tx: any,
   items: { productId?: string | null; quantity: number }[],
@@ -91,14 +91,14 @@ export const deductStockForProductItems = async (
 };
 
 const DUPLICATE_PRODUCT_MESSAGE =
-  'Duplicate product on receipt; each product can only appear once';
+  'Duplicate product on invoice; each product can only appear once';
 
 /**
  * Returns an error message if catalog productIds or custom product names
- * are duplicated within a receipt; otherwise null.
+ * are duplicated within an invoice; otherwise null.
  * Custom names are compared trimmed and case-insensitive among items without productId.
  */
-export const getReceiptItemsUniquenessError = (
+export const getInvoiceItemsUniquenessError = (
   items: { productId?: string | null; productName?: string }[],
 ): string | null => {
   const seenProductIds = new Set<string>();
@@ -124,9 +124,9 @@ export const getReceiptItemsUniquenessError = (
   return null;
 };
 
-export const getDuplicateReceiptProductMessage = () => DUPLICATE_PRODUCT_MESSAGE;
+export const getDuplicateInvoiceProductMessage = () => DUPLICATE_PRODUCT_MESSAGE;
 
-export const areReceiptItemsChanged = (
+export const areInvoiceItemsChanged = (
   existingItems: {
     productId?: string | null;
     productName: string;
@@ -165,28 +165,28 @@ export const areReceiptItemsChanged = (
 };
 
 /**
- * Generate unique, monotonically increasing receipt number: REC-00000001
- * Sequence never resets and never repeats, even if previous receipts are deleted.
+ * Generate unique, monotonically increasing invoice number: REC-00000001
+ * Sequence never resets and never repeats, even if previous invoices are deleted.
  */
-export const generateReceiptNumber = async (prismaClient: any): Promise<string> => {
+export const generateInvoiceNumber = async (prismaClient: any): Promise<string> => {
   const prefix = 'REC-';
 
-  // Find all receipts starting with REC- (including isDeleted: true)
-  const receipts = await prismaClient.receipt.findMany({
+  // Find all invoices starting with REC- (including isDeleted: true)
+  const invoices = await prismaClient.invoice.findMany({
     where: {
-      receiptNumber: {
+      invoiceNumber: {
         startsWith: prefix,
       },
     },
     select: {
-      receiptNumber: true,
+      invoiceNumber: true,
     },
   });
 
   let maxSeq = 0;
-  for (const r of receipts) {
-    if (!r.receiptNumber) continue;
-    const match = r.receiptNumber.match(/^REC-(\d+)$/);
+  for (const r of invoices) {
+    if (!r.invoiceNumber) continue;
+    const match = r.invoiceNumber.match(/^REC-(\d+)$/);
     if (match) {
       const num = parseInt(match[1], 10);
       if (!isNaN(num) && num > maxSeq) {
@@ -198,10 +198,10 @@ export const generateReceiptNumber = async (prismaClient: any): Promise<string> 
   let nextSeq = maxSeq + 1;
   let candidate = `${prefix}${String(nextSeq).padStart(8, '0')}`;
 
-  // Collision safety loop across all receipts (active or deleted)
+  // Collision safety loop across all invoices (active or deleted)
   while (true) {
-    const existing = await prismaClient.receipt.findFirst({
-      where: { receiptNumber: candidate },
+    const existing = await prismaClient.invoice.findFirst({
+      where: { invoiceNumber: candidate },
       select: { id: true },
     });
     if (!existing) {
@@ -225,7 +225,7 @@ export interface CalculatedItem {
   totalPrice: number;
 }
 
-export interface CalculatedReceiptTotals {
+export interface CalculatedInvoiceTotals {
   calculatedItems: CalculatedItem[];
   subTotal: number;
   discount: number;
@@ -235,9 +235,9 @@ export interface CalculatedReceiptTotals {
 }
 
 /**
- * Calculate individual item discounts (percentage) and overall receipt totals
+ * Calculate individual item discounts (percentage) and overall invoice totals
  */
-export const calculateReceiptTotals = (
+export const calculateInvoiceTotals = (
   rawItems: {
     productId?: string | null;
     productName: string;
@@ -250,7 +250,7 @@ export const calculateReceiptTotals = (
   }[],
   overallDiscount = 0,
   paidAmount = 0,
-): CalculatedReceiptTotals => {
+): CalculatedInvoiceTotals => {
   let subTotal = 0;
 
   const calculatedItems: CalculatedItem[] = rawItems.map(item => {

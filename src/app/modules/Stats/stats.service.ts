@@ -2,9 +2,9 @@ import httpStatus from 'http-status';
 import catchAsync from '../../utils/catchAsync';
 import sendResponse from '../../utils/sendResponse';
 import { prisma } from '../../utils/prisma';
-import { roundToTwo } from '../Receipt/receipt.utils';
+import { roundToTwo } from '../Invoice/invoice.utils';
 import {
-  computeReceiptLiveTotals,
+  computeInvoiceLiveTotals,
   sumCustomersSignedDue,
 } from '../Customer/customer.utils';
 
@@ -43,9 +43,9 @@ const getDhakaDateRanges = () => {
 };
 
 const getPeriodDeposit = async (gte?: Date, lte?: Date): Promise<number> => {
-  const result = await prisma.receiptPayment.aggregate({
+  const result = await prisma.invoicePayment.aggregate({
     where: {
-      receipt: {
+      invoice: {
         isDeleted: false,
         customer: { isDeleted: false },
       },
@@ -65,7 +65,7 @@ const getPeriodDeposit = async (gte?: Date, lte?: Date): Promise<number> => {
 };
 
 const getPeriodDue = async (gte?: Date, lte?: Date): Promise<number> => {
-  const receipts = await prisma.receipt.findMany({
+  const invoices = await prisma.invoice.findMany({
     where: {
       isDeleted: false,
       customer: { isDeleted: false },
@@ -108,8 +108,8 @@ const getPeriodDue = async (gte?: Date, lte?: Date): Promise<number> => {
   });
 
   let due = 0;
-  for (const receipt of receipts) {
-    const live = computeReceiptLiveTotals(receipt);
+  for (const invoice of invoices) {
+    const live = computeInvoiceLiveTotals(invoice);
     due += live.due;
   }
 

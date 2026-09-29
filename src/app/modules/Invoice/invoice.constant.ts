@@ -1,6 +1,6 @@
-export const receiptSearchableFields = ['receiptNumber', 'note'];
+export const invoiceSearchableFields = ['invoiceNumber', 'note'];
 
-export const receiptFilterableFields = [
+export const invoiceFilterableFields = [
   'searchTerm',
   'customerId',
   'status',

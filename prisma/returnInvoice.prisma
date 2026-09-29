@@ -2,8 +2,8 @@ model ReturnInvoice {
   id           String @id @default(uuid())
   returnNumber String @unique
 
-  receiptId String
-  receipt   Receipt @relation(fields: [receiptId], references: [id], onDelete: Restrict)
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
 
   previousReturnInvoiceId String?
   previousReturnInvoice   ReturnInvoice?  @relation("ReturnInvoiceChain", fields: [previousReturnInvoiceId], references: [id], onDelete: SetNull)
@@ -11,7 +11,7 @@ model ReturnInvoice {
 
   discount       Float         @default(0)
   refundedAmount Float         @default(0)
-  status         ReceiptStatus @default(PENDING)
+  status         InvoiceStatus @default(PENDING)
   note           String?
   isDeleted      Boolean       @default(false)
 
@@ -33,7 +33,7 @@ model ReturnInvoice {
   updatedAt DateTime @updatedAt
 
   @@index([returnNumber])
-  @@index([receiptId])
+  @@index([invoiceId])
   @@index([previousReturnInvoiceId])
   @@index([status])
   @@index([isDeleted])
@@ -49,11 +49,11 @@ model ReturnInvoiceItem {
   returnInvoiceId String
   returnInvoice   ReturnInvoice @relation(fields: [returnInvoiceId], references: [id], onDelete: Cascade)
 
-  receiptId String
-  receipt   Receipt @relation(fields: [receiptId], references: [id], onDelete: Restrict)
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
 
-  receiptItemId String
-  receiptItem   ReceiptItem @relation(fields: [receiptItemId], references: [id], onDelete: Restrict)
+  invoiceItemId String
+  invoiceItem   InvoiceItem @relation(fields: [invoiceItemId], references: [id], onDelete: Restrict)
 
   productId String?
   product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
@@ -68,10 +68,10 @@ model ReturnInvoiceItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([returnInvoiceId, receiptItemId])
+  @@unique([returnInvoiceId, invoiceItemId])
   @@index([returnInvoiceId])
-  @@index([receiptId])
-  @@index([receiptItemId])
+  @@index([invoiceId])
+  @@index([invoiceItemId])
   @@index([productId])
   @@map("return_invoice_items")
 }

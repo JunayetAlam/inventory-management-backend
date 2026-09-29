@@ -1,9 +1,9 @@
-import { roundToTwo } from '../Receipt/receipt.utils';
+import { roundToTwo } from '../Invoice/invoice.utils';
 
-const DUPLICATE_RECEIPT_ITEM_MESSAGE =
-  'Duplicate receipt item on return invoice; each source line can only appear once';
+const DUPLICATE_INVOICE_ITEM_MESSAGE =
+  'Duplicate invoice item on return invoice; each source line can only appear once';
 
-export const getDuplicateReturnItemMessage = () => DUPLICATE_RECEIPT_ITEM_MESSAGE;
+export const getDuplicateReturnItemMessage = () => DUPLICATE_INVOICE_ITEM_MESSAGE;
 
 /**
  * Generate unique, monotonically increasing return invoice number: RET-00000001
@@ -56,21 +56,21 @@ export const generateReturnNumber = async (prismaClient: any): Promise<string> =
 };
 
 export const getReturnItemsUniquenessError = (
-  items: { receiptItemId: string }[],
+  items: { invoiceItemId: string }[],
 ): string | null => {
   const seen = new Set<string>();
   for (const item of items) {
-    if (seen.has(item.receiptItemId)) {
-      return DUPLICATE_RECEIPT_ITEM_MESSAGE;
+    if (seen.has(item.invoiceItemId)) {
+      return DUPLICATE_INVOICE_ITEM_MESSAGE;
     }
-    seen.add(item.receiptItemId);
+    seen.add(item.invoiceItemId);
   }
   return null;
 };
 
 export interface CalculatedReturnItem {
-  receiptItemId: string;
-  receiptId: string;
+  invoiceItemId: string;
+  invoiceId: string;
   productId: string | null;
   productName: string;
   unit: any;
@@ -99,8 +99,8 @@ export interface CalculatedReturnTotals extends DerivedReturnMoney {
  */
 export const calculateReturnCreditFromItems = (
   rawItems: {
-    receiptItemId?: string;
-    receiptId?: string;
+    invoiceItemId?: string;
+    invoiceId?: string;
     productId?: string | null;
     productName?: string;
     unit?: any;
@@ -142,8 +142,8 @@ export const calculateReturnCreditFromItems = (
     subTotal = roundToTwo(subTotal + itemTotalPrice);
 
     return {
-      receiptItemId: item.receiptItemId || '',
-      receiptId: item.receiptId || '',
+      invoiceItemId: item.invoiceItemId || '',
+      invoiceId: item.invoiceId || '',
       productId: item.productId || null,
       productName: (item.productName || '').trim(),
       unit: item.unit || 'PIECE',
@@ -171,8 +171,8 @@ export const calculateReturnCreditFromItems = (
  */
 export const deriveReturnMoney = (
   rawItems: {
-    receiptItemId?: string;
-    receiptId?: string;
+    invoiceItemId?: string;
+    invoiceId?: string;
     productId?: string | null;
     productName?: string;
     unit?: any;
@@ -219,15 +219,15 @@ export const getRefundOverCapMessage = (
 };
 
 /**
- * Latest non-deleted return invoice for a receipt (LIFO tip).
+ * Latest non-deleted return invoice for an invoice (LIFO tip).
  */
 export const getLatestActiveReturn = async (
   prismaClient: any,
-  receiptId: string,
+  invoiceId: string,
   args?: { include?: any; select?: any },
 ) => {
   return prismaClient.returnInvoice.findFirst({
-    where: { receiptId, isDeleted: false },
+    where: { invoiceId, isDeleted: false },
     orderBy: [{ createdAt: 'desc' }, { returnNumber: 'desc' }],
     ...(args?.include ? { include: args.include } : {}),
     ...(args?.select ? { select: args.select } : {}),
@@ -236,23 +236,23 @@ export const getLatestActiveReturn = async (
 
 export const isLatestActiveReturn = async (
   prismaClient: any,
-  returnInvoice: { id: string; receiptId: string; isDeleted?: boolean },
+  returnInvoice: { id: string; invoiceId: string; isDeleted?: boolean },
 ): Promise<boolean> => {
   if (returnInvoice.isDeleted) return false;
-  const latest = await getLatestActiveReturn(prismaClient, returnInvoice.receiptId, {
+  const latest = await getLatestActiveReturn(prismaClient, returnInvoice.invoiceId, {
     select: { id: true },
   });
   return !!latest && latest.id === returnInvoice.id;
 };
 
-/** True when another active return exists on the same receipt created at/after this one. */
+/** True when another active return exists on the same invoice created at/after this one. */
 export const hasNewerActiveReturn = async (
   prismaClient: any,
-  returnInvoice: { id: string; receiptId: string; createdAt: Date },
+  returnInvoice: { id: string; invoiceId: string; createdAt: Date },
 ): Promise<boolean> => {
   const count = await prismaClient.returnInvoice.count({
     where: {
-      receiptId: returnInvoice.receiptId,
+      invoiceId: returnInvoice.invoiceId,
       isDeleted: false,
       id: { not: returnInvoice.id },
       createdAt: { gte: returnInvoice.createdAt },
@@ -262,24 +262,24 @@ export const hasNewerActiveReturn = async (
 };
 
 /**
- * Aggregate already-returned quantities per receiptItemId for a receipt.
+ * Aggregate already-returned quantities per invoiceItemId for an invoice.
  * Soft-deleted return invoices are excluded. Optionally exclude one return invoice (for edits).
  */
 export const getReturnedQtyMap = async (
   prismaClient: any,
-  receiptId: string,
+  invoiceId: string,
   excludeReturnInvoiceId?: string,
 ): Promise<Map<string, number>> => {
   const rows = await prismaClient.returnInvoiceItem.findMany({
     where: {
-      receiptId,
+      invoiceId,
       returnInvoice: {
         isDeleted: false,
         ...(excludeReturnInvoiceId ? { id: { not: excludeReturnInvoiceId } } : {}),
       },
     },
     select: {
-      receiptItemId: true,
+      invoiceItemId: true,
       quantity: true,
     },
   });
@@ -287,8 +287,8 @@ export const getReturnedQtyMap = async (
   const map = new Map<string, number>();
   for (const row of rows) {
     map.set(
-      row.receiptItemId,
-      roundToTwo((map.get(row.receiptItemId) || 0) + row.quantity),
+      row.invoiceItemId,
+      roundToTwo((map.get(row.invoiceItemId) || 0) + row.quantity),
     );
   }
   return map;
@@ -371,8 +371,8 @@ export const withDerivedReturnMoney = <T extends object>(
   ...money,
 });
 
-export interface ReceiptSettlement {
-  receiptTotal: number;
+export interface InvoiceSettlement {
+  invoiceTotal: number;
   paidAmount: number;
   creditsBefore: number;
   thisCredit: number;
@@ -388,19 +388,19 @@ export interface ReceiptSettlement {
 }
 
 /**
- * Receipt-level position after applying return credits and cash refunds.
+ * Invoice-level position after applying return credits and cash refunds.
  * Refunded cash reduces effective paid (money already returned to customer).
  * netDue = customer still owes; netRefundable = shop still owes customer.
  */
-export const deriveReceiptSettlement = (args: {
-  receiptTotal: number;
+export const deriveInvoiceSettlement = (args: {
+  invoiceTotal: number;
   paidAmount: number;
   creditsBefore?: number;
   thisCredit?: number;
   refundedBefore?: number;
   thisRefunded?: number;
-}): ReceiptSettlement => {
-  const receiptTotal = roundToTwo(Math.max(0, Number(args.receiptTotal) || 0));
+}): InvoiceSettlement => {
+  const invoiceTotal = roundToTwo(Math.max(0, Number(args.invoiceTotal) || 0));
   const paidAmount = roundToTwo(Math.max(0, Number(args.paidAmount) || 0));
   const creditsBefore = roundToTwo(Math.max(0, Number(args.creditsBefore) || 0));
   const thisCredit = roundToTwo(Math.max(0, Number(args.thisCredit) || 0));
@@ -408,13 +408,13 @@ export const deriveReceiptSettlement = (args: {
   const thisRefunded = roundToTwo(Math.max(0, Number(args.thisRefunded) || 0));
   const totalCredits = roundToTwo(creditsBefore + thisCredit);
   const totalRefunded = roundToTwo(refundedBefore + thisRefunded);
-  const netSaleAfterReturns = roundToTwo(Math.max(0, receiptTotal - totalCredits));
+  const netSaleAfterReturns = roundToTwo(Math.max(0, invoiceTotal - totalCredits));
   const netPaid = roundToTwo(Math.max(0, paidAmount - totalRefunded));
   const netDue = roundToTwo(Math.max(0, netSaleAfterReturns - netPaid));
   const netRefundable = roundToTwo(Math.max(0, netPaid - netSaleAfterReturns));
 
   return {
-    receiptTotal,
+    invoiceTotal,
     paidAmount,
     creditsBefore,
     thisCredit,
@@ -479,18 +479,18 @@ export const sumAncestorReturnCredits = async (
 type ActiveReturnMoneySum = { credits: number; refunded: number };
 
 /**
- * Sum net credits + cash refunds of all active returns on a receipt,
+ * Sum net credits + cash refunds of all active returns on an invoice,
  * optionally excluding one (edit).
  */
-export const sumActiveReturnMoneyOnReceipt = async (
+export const sumActiveReturnMoneyOnInvoice = async (
   prismaClient: any,
-  receiptId: string,
+  invoiceId: string,
   excludeReturnInvoiceId?: string,
   cache: Map<string, DerivedReturnMoney> = new Map(),
 ): Promise<ActiveReturnMoneySum> => {
   const rows = await prismaClient.returnInvoice.findMany({
     where: {
-      receiptId,
+      invoiceId,
       isDeleted: false,
       ...(excludeReturnInvoiceId ? { id: { not: excludeReturnInvoiceId } } : {}),
     },
@@ -508,16 +508,16 @@ export const sumActiveReturnMoneyOnReceipt = async (
   return { credits, refunded };
 };
 
-/** @deprecated Prefer sumActiveReturnMoneyOnReceipt — kept for existing call sites. */
-export const sumActiveReturnCreditsOnReceipt = async (
+/** @deprecated Prefer sumActiveReturnMoneyOnInvoice — kept for existing call sites. */
+export const sumActiveReturnCreditsOnInvoice = async (
   prismaClient: any,
-  receiptId: string,
+  invoiceId: string,
   excludeReturnInvoiceId?: string,
   cache: Map<string, DerivedReturnMoney> = new Map(),
 ): Promise<number> => {
-  const sum = await sumActiveReturnMoneyOnReceipt(
+  const sum = await sumActiveReturnMoneyOnInvoice(
     prismaClient,
-    receiptId,
+    invoiceId,
     excludeReturnInvoiceId,
     cache,
   );

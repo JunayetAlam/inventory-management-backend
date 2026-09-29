@@ -1,6 +1,6 @@
-model Receipt {
+model Invoice {
   id            String        @id @default(uuid())
-  receiptNumber String        @unique
+  invoiceNumber String        @unique
   customerId    String
   customer      Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
 
@@ -9,23 +9,23 @@ model Receipt {
   totalAmount   Float         @default(0)
   paidAmount    Float         @default(0)
   dueAmount     Float         @default(0)
-  status        ReceiptStatus @default(PENDING)
+  status        InvoiceStatus @default(PENDING)
   note          String?
   isDeleted     Boolean       @default(false)
 
   isDeleteRequested   Boolean   @default(false)
   deleteRequestedById String?
-  deleteRequestedBy   User?     @relation("ReceiptDeleteRequestedBy", fields: [deleteRequestedById], references: [id], onDelete: SetNull)
+  deleteRequestedBy   User?     @relation("InvoiceDeleteRequestedBy", fields: [deleteRequestedById], references: [id], onDelete: SetNull)
   deleteRequestedAt   DateTime?
   deleteReason        String?
 
   createdById   String?
   updatedById   String?
-  createdBy     User?         @relation("ReceiptCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  updatedBy     User?         @relation("ReceiptUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdBy     User?         @relation("InvoiceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy     User?         @relation("InvoiceUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
 
-  items         ReceiptItem[]
-  payments      ReceiptPayment[]
+  items         InvoiceItem[]
+  payments      InvoicePayment[]
   returnInvoices ReturnInvoice[]
   returnInvoiceItems ReturnInvoiceItem[]
   transactions  CustomerTransaction[]
@@ -33,7 +33,7 @@ model Receipt {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  @@index([receiptNumber])
+  @@index([invoiceNumber])
   @@index([customerId])
   @@index([status])
   @@index([isDeleted])
@@ -41,13 +41,13 @@ model Receipt {
   @@index([createdById])
   @@index([updatedById])
   @@index([createdAt])
-  @@map("receipts")
+  @@map("invoices")
 }
 
-model ReceiptItem {
+model InvoiceItem {
   id          String      @id @default(uuid())
-  receiptId   String
-  receipt     Receipt     @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  invoiceId   String
+  invoice     Invoice     @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   productId   String?
   product     Product?    @relation(fields: [productId], references: [id], onDelete: SetNull)
@@ -65,25 +65,25 @@ model ReceiptItem {
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
-  @@index([receiptId])
+  @@index([invoiceId])
   @@index([productId])
-  @@map("receipt_items")
+  @@map("invoice_items")
 }
 
-model ReceiptPayment {
+model InvoicePayment {
   id          String        @id @default(uuid())
-  receiptId   String
-  receipt     Receipt       @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  invoiceId   String
+  invoice     Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   amount      Float
   note        String?
-  status      ReceiptStatus @default(PENDING)
+  status      InvoiceStatus @default(PENDING)
 
   createdById String?
-  createdBy   User?         @relation("ReceiptPaymentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdBy   User?         @relation("InvoicePaymentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
   approvedById String?
-  approvedBy   User?        @relation("ReceiptPaymentApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedBy   User?        @relation("InvoicePaymentApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
   approvedAt   DateTime?
 
   transactions CustomerTransaction[]
@@ -91,14 +91,14 @@ model ReceiptPayment {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
-  @@index([receiptId])
+  @@index([invoiceId])
   @@index([createdById])
   @@index([approvedById])
   @@index([createdAt])
-  @@map("receipt_payments")
+  @@map("invoice_payments")
 }
 
-enum ReceiptStatus {
+enum InvoiceStatus {
   PENDING
   APPROVED
   REJECTED

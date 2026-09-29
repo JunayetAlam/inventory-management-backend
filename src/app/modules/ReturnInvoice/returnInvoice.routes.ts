@@ -9,9 +9,9 @@ const router = express.Router();
 router.get('/', auth('ANY'), ReturnInvoiceServices.getAllReturnInvoices);
 
 router.get(
-  '/returnable/:receiptId',
+  '/returnable/:invoiceId',
   auth('ANY'),
-  ReturnInvoiceServices.getReturnableItemsByReceipt,
+  ReturnInvoiceServices.getReturnableItemsByInvoice,
 );
 
 router.get('/:id', auth('ANY'), ReturnInvoiceServices.getReturnInvoiceById);

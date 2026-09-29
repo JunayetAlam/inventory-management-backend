@@ -1,5 +1,5 @@
 enum CustomerTransactionType {
-  RECEIPT
+  INVOICE
   PAYMENT
   RETURN_INVOICE
 }
@@ -12,11 +12,11 @@ model CustomerTransaction {
   type CustomerTransactionType
 
   // Link / reference IDs
-  receiptId String?
-  receipt   Receipt? @relation(fields: [receiptId], references: [id], onDelete: SetNull)
+  invoiceId String?
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
 
   paymentId String?
-  payment   ReceiptPayment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  payment   InvoicePayment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
 
   returnInvoiceId String?
   returnInvoice   ReturnInvoice? @relation(fields: [returnInvoiceId], references: [id], onDelete: SetNull)
@@ -31,7 +31,7 @@ model CustomerTransaction {
 
   @@index([customerId])
   @@index([type])
-  @@index([receiptId])
+  @@index([invoiceId])
   @@index([paymentId])
   @@index([returnInvoiceId])
   @@index([createdById])

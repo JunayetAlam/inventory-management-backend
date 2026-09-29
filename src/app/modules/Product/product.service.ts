@@ -7,18 +7,18 @@ import AppError from '../../errors/AppError';
 import {
   NotificationType,
   ProductUnit,
-  ReceiptStatus,
+  InvoiceStatus,
   UserRoleEnum,
 } from '../../../generated/prisma/client';
 import { logActivity } from '../../utils/activityLog';
 import { notifyAdmins, sendNotification } from '../../utils/notification';
 import { productSearchableFields } from './product.constant';
 import { generateSlug } from '../../utils/slug';
-import { roundToTwo } from '../Receipt/receipt.utils';
+import { roundToTwo } from '../Invoice/invoice.utils';
 import { parseProductProfitQuery } from './product.validation';
 import {
   buildCreatedAtRange,
-  contributeReceiptLine,
+  contributeInvoiceLine,
   emptyProductAgg,
   finalizeProductRow,
   sortProductProfitRows,
@@ -224,7 +224,7 @@ const getAllProducts = catchAsync(async (req, res) => {
 });
 
 /**
- * Active-catalog stats: product count, stock sum, net sold qty (receipts − returns).
+ * Active-catalog stats: product count, stock sum, net sold qty (invoices − returns).
  */
 const getProductStats = catchAsync(async (_req, res) => {
   const [productAgg, soldAgg, returnedAgg, lowStockCount] = await Promise.all([
@@ -233,12 +233,12 @@ const getProductStats = catchAsync(async (_req, res) => {
       _count: { _all: true },
       _sum: { stock: true },
     }),
-    prisma.receiptItem.aggregate({
+    prisma.invoiceItem.aggregate({
       where: {
         productId: { not: null },
-        receipt: {
+        invoice: {
           isDeleted: false,
-          status: { not: ReceiptStatus.REJECTED },
+          status: { not: InvoiceStatus.REJECTED },
         },
       },
       _sum: { quantity: true },
@@ -248,7 +248,7 @@ const getProductStats = catchAsync(async (_req, res) => {
         productId: { not: null },
         returnInvoice: {
           isDeleted: false,
-          status: { not: ReceiptStatus.REJECTED },
+          status: { not: InvoiceStatus.REJECTED },
         },
       },
       _sum: { quantity: true },
@@ -764,33 +764,33 @@ const bulkCreateProducts = catchAsync(async (req, res) => {
 });
 
 /**
- * Per-product profit/loss from receipt items in an optional date range.
+ * Per-product profit/loss from invoice items in an optional date range.
  *
  * Date rules (Asia/Dhaka calendar days, inclusive):
- * - Only receipts whose createdAt falls in [startDate, endDate]
+ * - Only invoices whose createdAt falls in [startDate, endDate]
  * - Returned qty deducted only from return invoices whose createdAt is also in range
  * - Returns outside the range are ignored (net sold stays higher for that period)
  *
- * Profit uses receipt-item selling (via totalPrice) and buyingPrice snapshots.
+ * Profit uses invoice-item selling (via totalPrice) and buyingPrice snapshots.
  * If buyingPrice is missing, unit sellingPrice is used as cost (zero margin on that qty).
  * Return unit-price differences are ignored — only qty is reduced.
- * Each product row includes receipt numbers that contributed net sold qty.
+ * Each product row includes invoice numbers that contributed net sold qty.
  */
 const getProductProfit = catchAsync(async (req, res) => {
   const query = parseProductProfitQuery(req.query);
   const createdAtRange = buildCreatedAtRange(query.startDate, query.endDate);
 
-  const receiptWhere = {
+  const invoiceWhere = {
     isDeleted: false,
-    status: { not: ReceiptStatus.REJECTED },
+    status: { not: InvoiceStatus.REJECTED },
     ...(createdAtRange ? { createdAt: createdAtRange } : {}),
   };
 
-  const receipts = await prisma.receipt.findMany({
-    where: receiptWhere,
+  const invoices = await prisma.invoice.findMany({
+    where: invoiceWhere,
     select: {
       id: true,
-      receiptNumber: true,
+      invoiceNumber: true,
       items: {
         where: { productId: { not: null } },
         select: {
@@ -813,38 +813,38 @@ const getProductProfit = catchAsync(async (req, res) => {
     },
   });
 
-  const receiptItems = receipts.flatMap(r =>
+  const invoiceItems = invoices.flatMap(r =>
     r.items.map(item => ({
       ...item,
-      receiptId: r.id,
-      receiptNumber: r.receiptNumber,
+      invoiceId: r.id,
+      invoiceNumber: r.invoiceNumber,
     })),
   );
-  const receiptItemIds = receiptItems.map(it => it.id);
+  const invoiceItemIds = invoiceItems.map(it => it.id);
 
   const returnedQtyByItemId = new Map<string, number>();
 
-  if (receiptItemIds.length > 0) {
+  if (invoiceItemIds.length > 0) {
     const returnRows = await prisma.returnInvoiceItem.findMany({
       where: {
-        receiptItemId: { in: receiptItemIds },
+        invoiceItemId: { in: invoiceItemIds },
         returnInvoice: {
           isDeleted: false,
-          status: { not: ReceiptStatus.REJECTED },
+          status: { not: InvoiceStatus.REJECTED },
           ...(createdAtRange ? { createdAt: createdAtRange } : {}),
         },
       },
       select: {
-        receiptItemId: true,
+        invoiceItemId: true,
         quantity: true,
       },
     });
 
     for (const row of returnRows) {
       returnedQtyByItemId.set(
-        row.receiptItemId,
+        row.invoiceItemId,
         roundToTwo(
-          (returnedQtyByItemId.get(row.receiptItemId) || 0) + Number(row.quantity),
+          (returnedQtyByItemId.get(row.invoiceItemId) || 0) + Number(row.quantity),
         ),
       );
     }
@@ -852,7 +852,7 @@ const getProductProfit = catchAsync(async (req, res) => {
 
   const byProduct = new Map<string, ProductProfitAgg>();
 
-  for (const item of receiptItems) {
+  for (const item of invoiceItems) {
     const productId = item.productId;
     if (!productId) continue;
 
@@ -868,7 +868,7 @@ const getProductProfit = catchAsync(async (req, res) => {
       agg.unit = item.product.unit;
     }
 
-    contributeReceiptLine(
+    contributeInvoiceLine(
       agg,
       {
         quantity: item.quantity,
@@ -877,7 +877,7 @@ const getProductProfit = catchAsync(async (req, res) => {
         buyingPrice: item.buyingPrice,
       },
       returnedQtyByItemId.get(item.id) || 0,
-      { id: item.receiptId, receiptNumber: item.receiptNumber },
+      { id: item.invoiceId, invoiceNumber: item.invoiceNumber },
     );
   }
 

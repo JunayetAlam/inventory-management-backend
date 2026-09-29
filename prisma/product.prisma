@@ -20,7 +20,7 @@ model Product {
   createdBy           User?       @relation("ProductCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   updatedBy           User?       @relation("ProductUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
 
-  receiptItems        ReceiptItem[]
+  invoiceItems        InvoiceItem[]
   returnInvoiceItems  ReturnInvoiceItem[]
 
   createdAt           DateTime    @default(now())

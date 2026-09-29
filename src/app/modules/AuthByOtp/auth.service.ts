@@ -109,7 +109,7 @@ const loginWithFirebase = catchAsync(async (req, res) => {
 
     sendNotification({
       userId: user.id,
-      title: 'Welcome to Receipt Management System',
+      title: 'Welcome to Invoice Management System',
       message:
         'Your account has been created via social login and is pending admin approval.',
       type: NotificationType.INFO,
@@ -246,7 +246,7 @@ const registerUser = catchAsync(async (req, res) => {
 
   sendNotification({
     userId: createdUser.id,
-    title: 'Welcome to Receipt Management System',
+    title: 'Welcome to Invoice Management System',
     message:
       'Your account has been registered. Please verify your email using the OTP code.',
     type: NotificationType.INFO,

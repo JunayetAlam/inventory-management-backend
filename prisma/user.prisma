@@ -48,16 +48,16 @@ model User {
   updatedProducts        Product[] @relation("ProductUpdatedBy")
   deleteRequestedProducts Product[] @relation("ProductDeleteRequestedBy")
 
-  createdReceipts Receipt[] @relation("ReceiptCreatedBy")
-  updatedReceipts Receipt[] @relation("ReceiptUpdatedBy")
-  deleteRequestedReceipts Receipt[] @relation("ReceiptDeleteRequestedBy")
+  createdInvoices Invoice[] @relation("InvoiceCreatedBy")
+  updatedInvoices Invoice[] @relation("InvoiceUpdatedBy")
+  deleteRequestedInvoices Invoice[] @relation("InvoiceDeleteRequestedBy")
 
   createdReturnInvoices ReturnInvoice[] @relation("ReturnInvoiceCreatedBy")
   updatedReturnInvoices ReturnInvoice[] @relation("ReturnInvoiceUpdatedBy")
   deleteRequestedReturnInvoices ReturnInvoice[] @relation("ReturnInvoiceDeleteRequestedBy")
 
-  receivedPayments ReceiptPayment[] @relation("ReceiptPaymentCreatedBy")
-  approvedPayments ReceiptPayment[] @relation("ReceiptPaymentApprovedBy")
+  receivedPayments InvoicePayment[] @relation("InvoicePaymentCreatedBy")
+  approvedPayments InvoicePayment[] @relation("InvoicePaymentApprovedBy")
 
   createdShops Shop[] @relation("ShopCreatedBy")
   updatedShops Shop[] @relation("ShopUpdatedBy")

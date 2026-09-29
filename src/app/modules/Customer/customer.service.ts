@@ -263,10 +263,10 @@ const getCustomerById = catchAsync(async (req, res) => {
       deleteRequestedBy: {
         select: { id: true, firstName: true, lastName: true, email: true },
       },
-      receipts: {
+      invoices: {
         select: {
           id: true,
-          receiptNumber: true,
+          invoiceNumber: true,
           totalAmount: true,
           paidAmount: true,
           dueAmount: true,

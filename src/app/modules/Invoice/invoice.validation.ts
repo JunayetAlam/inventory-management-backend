@@ -1,13 +1,13 @@
 import { z } from 'zod';
-import { ProductUnit, ReceiptStatus } from '../../../generated/prisma/client';
-import { getDuplicateReceiptProductMessage } from './receipt.utils';
+import { ProductUnit, InvoiceStatus } from '../../../generated/prisma/client';
+import { getDuplicateInvoiceProductMessage } from './invoice.utils';
 
 const productUnitEnum = z.nativeEnum(ProductUnit);
-const receiptStatusEnum = z.nativeEnum(ReceiptStatus);
+const invoiceStatusEnum = z.nativeEnum(InvoiceStatus);
 
-const DUPLICATE_PRODUCT_MESSAGE = getDuplicateReceiptProductMessage();
+const DUPLICATE_PRODUCT_MESSAGE = getDuplicateInvoiceProductMessage();
 
-const receiptItemSchema = z.object({
+const invoiceItemSchema = z.object({
   productId: z.string().uuid().optional().nullable(),
   productName: z.string({ error: 'Product name is required' }).min(1, 'Product name cannot be empty'),
   unit: productUnitEnum.default(ProductUnit.PIECE),
@@ -22,7 +22,7 @@ const receiptItemSchema = z.object({
   discount: z.number().min(0, 'Discount cannot be negative').max(100, 'Discount cannot exceed 100%').optional(),
 });
 
-const areReceiptItemsUnique = (
+const areInvoiceItemsUnique = (
   items: { productId?: string | null; productName?: string }[],
 ): boolean => {
   const seenProductIds = new Set<string>();
@@ -49,7 +49,7 @@ const uniqueItemsRefine = {
   path: ['items'] as (string | number)[],
 };
 
-const createReceiptSchema = z.object({
+const createInvoiceSchema = z.object({
   body: z
     .object({
       customerId: z.string().uuid('Invalid customer ID').optional().nullable(),
@@ -58,7 +58,7 @@ const createReceiptSchema = z.object({
       customerName: z.string().min(1).max(100).optional().nullable(),
       customerAddress: z.string().max(300).optional().nullable(),
       customerEmail: z.string().email('Invalid email address').optional().nullable().or(z.literal('')),
-      items: z.array(receiptItemSchema).min(1, 'At least one item is required in the receipt'),
+      items: z.array(invoiceItemSchema).min(1, 'At least one item is required in the invoice'),
       discount: z.number().min(0, 'Overall discount cannot be negative').default(0),
       paidAmount: z.number().min(0, 'Paid amount cannot be negative').default(0),
       note: z.string().max(500, 'Note is too long').optional().nullable(),
@@ -67,10 +67,10 @@ const createReceiptSchema = z.object({
       message: 'Either customerId or customerPhone is required',
       path: ['customerId'],
     })
-    .refine(data => areReceiptItemsUnique(data.items), uniqueItemsRefine),
+    .refine(data => areInvoiceItemsUnique(data.items), uniqueItemsRefine),
 });
 
-const updateReceiptSchema = z.object({
+const updateInvoiceSchema = z.object({
   body: z
     .object({
       customerId: z.string().uuid().optional().nullable(),
@@ -79,14 +79,14 @@ const updateReceiptSchema = z.object({
       customerName: z.string().min(1).max(100).optional().nullable(),
       customerAddress: z.string().max(300).optional().nullable(),
       customerEmail: z.string().email('Invalid email address').optional().nullable().or(z.literal('')),
-      status: receiptStatusEnum.optional(),
-      items: z.array(receiptItemSchema).min(1, 'At least one item is required').optional(),
+      status: invoiceStatusEnum.optional(),
+      items: z.array(invoiceItemSchema).min(1, 'At least one item is required').optional(),
       discount: z.number().min(0).optional(),
       paidAmount: z.number().min(0).optional(),
       note: z.string().max(500).optional().nullable(),
     })
     .refine(
-      data => !data.items || areReceiptItemsUnique(data.items),
+      data => !data.items || areInvoiceItemsUnique(data.items),
       uniqueItemsRefine,
     ),
 });
@@ -115,15 +115,15 @@ const deleteRequestSchema = z.object({
 
 const updateStatusSchema = z.object({
   body: z.object({
-    status: z.nativeEnum(ReceiptStatus, {
-      error: 'Valid receipt status (PENDING, APPROVED, REJECTED) is required',
+    status: z.nativeEnum(InvoiceStatus, {
+      error: 'Valid invoice status (PENDING, APPROVED, REJECTED) is required',
     }),
   }),
 });
 
-export const receiptValidation = {
-  createReceiptSchema,
-  updateReceiptSchema,
+export const invoiceValidation = {
+  createInvoiceSchema,
+  updateInvoiceSchema,
   addPaymentSchema,
   updatePaymentSchema,
   deleteRequestSchema,

@@ -8,7 +8,7 @@ import { ActivityLogRouters } from '../modules/ActivityLog/activityLog.routes';
 import { CustomerTransactionRouters } from '../modules/CustomerTransaction/customerTransaction.routes';
 import { ProductRouters } from '../modules/Product/product.routes';
 import { CustomerRouters } from '../modules/Customer/customer.routes';
-import { ReceiptRouters } from '../modules/Receipt/receipt.routes';
+import { InvoiceRouters } from '../modules/Invoice/invoice.routes';
 import { ReturnInvoiceRouters } from '../modules/ReturnInvoice/returnInvoice.routes';
 import { ShopRouters } from '../modules/Shop/shop.routes';
 import { StatsRouters } from '../modules/Stats/stats.routes';
@@ -37,8 +37,8 @@ const moduleRoutes = [
     route: ProductRouters,
   },
   {
-    path: '/receipts',
-    route: ReceiptRouters,
+    path: '/invoices',
+    route: InvoiceRouters,
   },
   {
     path: '/return-invoices',

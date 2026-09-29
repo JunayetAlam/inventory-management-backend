@@ -1,6 +1,6 @@
-import { roundToTwo } from '../Receipt/receipt.utils';
+import { roundToTwo } from '../Invoice/invoice.utils';
 import {
-  deriveReceiptSettlement,
+  deriveInvoiceSettlement,
   deriveReturnMoney,
 } from '../ReturnInvoice/returnInvoice.utils';
 
@@ -37,7 +37,7 @@ type ReturnRow = {
   items: ReturnItemRow[];
 };
 
-type ReceiptRow = {
+type InvoiceRow = {
   customerId: string;
   totalAmount: number;
   paidAmount: number;
@@ -75,16 +75,16 @@ const buildActiveChain = (
 };
 
 /**
- * Live totals for one receipt: last return invoice currentPosition when returns exist,
- * otherwise stored receipt due/paid/discount.
+ * Live totals for one invoice: last return invoice currentPosition when returns exist,
+ * otherwise stored invoice due/paid/discount.
  */
-export const computeReceiptLiveTotals = (receipt: ReceiptRow) => {
-  const returns = receipt.returnInvoices || [];
+export const computeInvoiceLiveTotals = (invoice: InvoiceRow) => {
+  const returns = invoice.returnInvoices || [];
   if (!returns.length) {
     return {
-      due: roundToTwo(receipt.dueAmount),
-      paid: roundToTwo(receipt.paidAmount),
-      discount: roundToTwo(receipt.discount),
+      due: roundToTwo(invoice.dueAmount),
+      paid: roundToTwo(invoice.paidAmount),
+      discount: roundToTwo(invoice.discount),
       refunded: 0,
       refundDue: 0,
     };
@@ -123,9 +123,9 @@ export const computeReceiptLiveTotals = (receipt: ReceiptRow) => {
     }
   }
 
-  const settlement = deriveReceiptSettlement({
-    receiptTotal: receipt.totalAmount,
-    paidAmount: receipt.paidAmount,
+  const settlement = deriveInvoiceSettlement({
+    invoiceTotal: invoice.totalAmount,
+    paidAmount: invoice.paidAmount,
     creditsBefore: ancestorCredits,
     thisCredit: thisMoney.totalAmount,
     refundedBefore: ancestorRefunded,
@@ -134,16 +134,16 @@ export const computeReceiptLiveTotals = (receipt: ReceiptRow) => {
 
   return {
     due: roundToTwo(settlement.netDue - settlement.netRefundable),
-    paid: roundToTwo(receipt.paidAmount),
-    discount: roundToTwo(roundToTwo(receipt.discount) + chainDiscount),
+    paid: roundToTwo(invoice.paidAmount),
+    discount: roundToTwo(roundToTwo(invoice.discount) + chainDiscount),
     refunded: settlement.totalRefunded,
     refundDue: settlement.netRefundable,
   };
 };
 
 /**
- * Aggregate live receipt/return totals for the given customers.
- * Soft-deleted receipts and return invoices are excluded.
+ * Aggregate live invoice/return totals for the given customers.
+ * Soft-deleted invoices and return invoices are excluded.
  */
 export const computeCustomersFinancials = async (
   prismaClient: any,
@@ -156,7 +156,7 @@ export const computeCustomersFinancials = async (
 
   if (!customerIds.length) return map;
 
-  const receipts: ReceiptRow[] = await prismaClient.receipt.findMany({
+  const invoices: InvoiceRow[] = await prismaClient.invoice.findMany({
     where: {
       customerId: { in: customerIds },
       isDeleted: false,
@@ -183,10 +183,10 @@ export const computeCustomersFinancials = async (
     },
   });
 
-  for (const receipt of receipts) {
-    const totals = computeReceiptLiveTotals(receipt);
-    const current = map.get(receipt.customerId) || emptyFinancials();
-    map.set(receipt.customerId, {
+  for (const invoice of invoices) {
+    const totals = computeInvoiceLiveTotals(invoice);
+    const current = map.get(invoice.customerId) || emptyFinancials();
+    map.set(invoice.customerId, {
       totalDue: roundToTwo(current.totalDue + totals.due),
       totalPaid: roundToTwo(current.totalPaid + totals.paid),
       totalDiscount: roundToTwo(current.totalDiscount + totals.discount),

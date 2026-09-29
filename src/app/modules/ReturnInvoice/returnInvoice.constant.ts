@@ -2,7 +2,7 @@ export const returnInvoiceSearchableFields = ['returnNumber', 'note'];
 
 export const returnInvoiceFilterableFields = [
   'searchTerm',
-  'receiptId',
+  'invoiceId',
   'status',
   'isDeleted',
   'isDeleteRequested',

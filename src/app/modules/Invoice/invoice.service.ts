@@ -7,22 +7,22 @@ import AppError from '../../errors/AppError';
 import {
   CustomerTransactionType,
   NotificationType,
-  ReceiptStatus,
+  InvoiceStatus,
   UserRoleEnum,
 } from '../../../generated/prisma/client';
 import { logActivity } from '../../utils/activityLog';
 import { notifyAdmins, sendNotification } from '../../utils/notification';
-import { receiptSearchableFields } from './receipt.constant';
+import { invoiceSearchableFields } from './invoice.constant';
 import {
   applyStockDeltaMap,
-  areReceiptItemsChanged,
-  calculateReceiptTotals,
+  areInvoiceItemsChanged,
+  calculateInvoiceTotals,
   deductStockForProductItems,
-  generateReceiptNumber,
-  getReceiptItemsUniquenessError,
+  generateInvoiceNumber,
+  getInvoiceItemsUniquenessError,
   restoreStockForProductItems,
   roundToTwo,
-} from './receipt.utils';
+} from './invoice.utils';
 import { parsePhoneInput, getPhoneLookupVariants } from '../../utils/phone';
 import {
   deriveMoneyForReturnInvoice,
@@ -30,10 +30,10 @@ import {
 } from '../ReturnInvoice/returnInvoice.utils';
 
 /**
- * Create a new receipt with automatic pricing, per-item percentage discount,
- * overall receipt discount, payment tracking, and safe inventory deduction.
+ * Create a new invoice with automatic pricing, per-item percentage discount,
+ * overall invoice discount, payment tracking, and safe inventory deduction.
  */
-const createReceipt = catchAsync(async (req, res) => {
+const createInvoice = catchAsync(async (req, res) => {
   const actor = req.user;
   const {
     customerId,
@@ -96,7 +96,7 @@ const createReceipt = catchAsync(async (req, res) => {
           name: customer.name,
           countryCode: customer.countryCode,
           phoneNumber: customer.phoneNumber,
-          source: 'AUTO_RECEIPT_CREATION',
+          source: 'AUTO_INVOICE_CREATION',
         },
       });
     } else if (customer.isDeleted) {
@@ -126,7 +126,7 @@ const createReceipt = catchAsync(async (req, res) => {
           name: customer.name,
           countryCode: customer.countryCode,
           phoneNumber: customer.phoneNumber,
-          source: 'AUTO_RECEIPT_CREATION',
+          source: 'AUTO_INVOICE_CREATION',
         },
       });
     }
@@ -136,7 +136,7 @@ const createReceipt = catchAsync(async (req, res) => {
     throw new AppError(httpStatus.BAD_REQUEST, 'Valid customerId or customerPhone is required');
   }
 
-  const duplicateProductError = getReceiptItemsUniquenessError(items);
+  const duplicateProductError = getInvoiceItemsUniquenessError(items);
   if (duplicateProductError) {
     throw new AppError(httpStatus.BAD_REQUEST, duplicateProductError);
   }
@@ -176,39 +176,39 @@ const createReceipt = catchAsync(async (req, res) => {
     totalAmount,
     paidAmount: finalPaidAmount,
     dueAmount,
-  } = calculateReceiptTotals(enrichedItems, discount, paidAmount);
+  } = calculateInvoiceTotals(enrichedItems, discount, paidAmount);
 
-  // 5. Execute transaction for Receipt, Items, Payment, and Stock updates
+  // 5. Execute transaction for Invoice, Items, Payment, and Stock updates
   const warnings: string[] = [];
 
   const result = await prisma.$transaction(async tx => {
-    // Generate unique receipt number
-    const receiptNumber = await generateReceiptNumber(tx);
+    // Generate unique invoice number
+    const invoiceNumber = await generateInvoiceNumber(tx);
 
     // Deduct inventory stock (aggregated by productId; may go negative on oversell)
     await deductStockForProductItems(tx, calculatedItems, warnings);
 
-    // Create Receipt header
-    const receipt = await tx.receipt.create({
+    // Create Invoice header
+    const invoice = await tx.invoice.create({
       data: {
-        receiptNumber,
+        invoiceNumber,
         customerId: customer.id,
         subTotal,
         discount: totalDiscount,
         totalAmount,
         paidAmount: finalPaidAmount,
         dueAmount,
-        status: ReceiptStatus.PENDING,
+        status: InvoiceStatus.PENDING,
         note: note || null,
         createdById: actor.id,
         updatedById: actor.id,
       },
     });
 
-    // Create Receipt Items
-    await tx.receiptItem.createMany({
+    // Create Invoice Items
+    await tx.invoiceItem.createMany({
       data: calculatedItems.map(item => ({
-        receiptId: receipt.id,
+        invoiceId: invoice.id,
         productId: item.productId,
         productName: item.productName,
         unit: item.unit,
@@ -220,12 +220,12 @@ const createReceipt = catchAsync(async (req, res) => {
       })),
     });
 
-    // Create CustomerTransaction for Receipt
+    // Create CustomerTransaction for Invoice
     await tx.customerTransaction.create({
       data: {
         customerId: customer.id,
-        type: CustomerTransactionType.RECEIPT,
-        receiptId: receipt.id,
+        type: CustomerTransactionType.INVOICE,
+        invoiceId: invoice.id,
         note: note || null,
         createdById: actor.id,
       },
@@ -233,11 +233,11 @@ const createReceipt = catchAsync(async (req, res) => {
 
     // If initial payment was made, record it as the first payment entry and create CustomerTransaction for Payment
     if (finalPaidAmount > 0) {
-      const initialPayment = await tx.receiptPayment.create({
+      const initialPayment = await tx.invoicePayment.create({
         data: {
-          receiptId: receipt.id,
+          invoiceId: invoice.id,
           amount: finalPaidAmount,
-          note: 'Initial payment upon receipt creation',
+          note: 'Initial payment upon invoice creation',
           createdById: actor.id,
         },
       });
@@ -246,7 +246,7 @@ const createReceipt = catchAsync(async (req, res) => {
         data: {
           customerId: customer.id,
           type: CustomerTransactionType.PAYMENT,
-          receiptId: receipt.id,
+          invoiceId: invoice.id,
           paymentId: initialPayment.id,
           note: initialPayment.note || null,
           createdById: actor.id,
@@ -254,9 +254,9 @@ const createReceipt = catchAsync(async (req, res) => {
       });
     }
 
-    // Return complete receipt
-    return tx.receipt.findUnique({
-      where: { id: receipt.id },
+    // Return complete invoice
+    return tx.invoice.findUnique({
+      where: { id: invoice.id },
       include: {
         customer: {
           select: { id: true, name: true, phoneNumber: true, email: true, address: true },
@@ -273,12 +273,12 @@ const createReceipt = catchAsync(async (req, res) => {
   // 6. Non-blocking Activity Log and Notifications
   logActivity({
     userId: actor.id,
-    action: 'CREATE_RECEIPT',
-    entityType: 'RECEIPT',
+    action: 'CREATE_INVOICE',
+    entityType: 'INVOICE',
     entityId: result?.id,
     req,
     details: {
-      receiptNumber: result?.receiptNumber,
+      invoiceNumber: result?.invoiceNumber,
       totalAmount,
       paidAmount: finalPaidAmount,
       dueAmount,
@@ -289,36 +289,36 @@ const createReceipt = catchAsync(async (req, res) => {
   });
 
   notifyAdmins({
-    title: 'New Receipt Created',
-    message: `Receipt ${result?.receiptNumber} created for ${customer.name} (৳${totalAmount}).`,
+    title: 'New Invoice Created',
+    message: `Invoice ${result?.invoiceNumber} created for ${customer.name} (৳${totalAmount}).`,
     type: NotificationType.INFO,
-    link: `/receipts/${result?.id}`,
+    link: `/invoices/${result?.id}`,
     req,
   });
 
   sendNotification({
     userId: actor.id,
-    title: 'Receipt Created',
-    message: `Receipt ${result?.receiptNumber} has been generated successfully.`,
+    title: 'Invoice Created',
+    message: `Invoice ${result?.invoiceNumber} has been generated successfully.`,
     type: NotificationType.SUCCESS,
-    link: `/receipts/${result?.id}`,
+    link: `/invoices/${result?.id}`,
     req,
   });
 
   sendResponse(res, {
     statusCode: httpStatus.CREATED,
-    message: 'Receipt created successfully',
+    message: 'Invoice created successfully',
     data: {
-      receipt: result,
+      invoice: result,
       warnings,
     },
   });
 });
 
 /**
- * Get all receipts with searching, filtering, and role awareness
+ * Get all invoices with searching, filtering, and role awareness
  */
-const getAllReceipts = catchAsync(async (req, res) => {
+const getAllInvoices = catchAsync(async (req, res) => {
   const actor = req.user;
   const query: Record<string, unknown> = { ...req.query };
 
@@ -337,18 +337,18 @@ const getAllReceipts = catchAsync(async (req, res) => {
     query.isDeleteRequested = false;
   }
 
-  const receiptsQuery = new QueryBuilder<typeof prisma.receipt>(
-    prisma.receipt,
+  const invoicesQuery = new QueryBuilder<typeof prisma.invoice>(
+    prisma.invoice,
     query,
   );
 
-  const result = await receiptsQuery
-    .search(receiptSearchableFields)
+  const result = await invoicesQuery
+    .search(invoiceSearchableFields)
     .filter()
     .sort()
     .customFields({
       id: true,
-      receiptNumber: true,
+      invoiceNumber: true,
       customerId: true,
       subTotal: true,
       discount: true,
@@ -404,18 +404,18 @@ const getAllReceipts = catchAsync(async (req, res) => {
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
-    message: 'Receipts retrieved successfully',
+    message: 'Invoices retrieved successfully',
     ...result,
   });
 });
 
 /**
- * Get a single receipt by ID with full item details and payment history
+ * Get a single invoice by ID with full item details and payment history
  */
-const getReceiptById = catchAsync(async (req, res) => {
+const getInvoiceById = catchAsync(async (req, res) => {
   const { id } = req.params;
 
-  const receipt = await prisma.receipt.findUnique({
+  const invoice = await prisma.invoice.findUnique({
     where: { id },
     include: {
       customer: true,
@@ -459,21 +459,21 @@ const getReceiptById = catchAsync(async (req, res) => {
     },
   });
 
-  if (!receipt) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Receipt not found');
+  if (!invoice) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Invoice not found');
   }
 
   const returnedQtyMap = new Map<string, number>();
-  for (const ret of receipt.returnInvoices) {
+  for (const ret of invoice.returnInvoices) {
     for (const item of ret.items) {
       returnedQtyMap.set(
-        item.receiptItemId,
-        roundToTwo((returnedQtyMap.get(item.receiptItemId) || 0) + item.quantity),
+        item.invoiceItemId,
+        roundToTwo((returnedQtyMap.get(item.invoiceItemId) || 0) + item.quantity),
       );
     }
   }
 
-  const itemsWithReturnMeta = receipt.items.map(it => {
+  const itemsWithReturnMeta = invoice.items.map(it => {
     const alreadyReturned = returnedQtyMap.get(it.id) || 0;
     return {
       ...it,
@@ -484,16 +484,16 @@ const getReceiptById = catchAsync(async (req, res) => {
 
   const moneyCache = new Map();
   const returnInvoicesWithMoney = [];
-  for (const ret of receipt.returnInvoices) {
+  for (const ret of invoice.returnInvoices) {
     const money = await deriveMoneyForReturnInvoice(prisma, ret.id, moneyCache);
     returnInvoicesWithMoney.push(withDerivedReturnMoney(ret, money));
   }
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
-    message: 'Receipt retrieved successfully',
+    message: 'Invoice retrieved successfully',
     data: {
-      ...receipt,
+      ...invoice,
       items: itemsWithReturnMeta,
       returnInvoices: returnInvoicesWithMoney,
     },
@@ -501,44 +501,44 @@ const getReceiptById = catchAsync(async (req, res) => {
 });
 
 /**
- * Update receipt with Role-Based Guard (Approved locked for cashier)
+ * Update invoice with Role-Based Guard (Approved locked for cashier)
  * and differential stock synchronization.
  */
-const updateReceipt = catchAsync(async (req, res) => {
+const updateInvoice = catchAsync(async (req, res) => {
   const { id } = req.params;
   const actor = req.user;
   const payload = req.body;
 
-  const existing = await prisma.receipt.findUnique({
+  const existing = await prisma.invoice.findUnique({
     where: { id },
     include: { items: true },
   });
 
   if (!existing || existing.isDeleted) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Receipt not found or is deleted');
+    throw new AppError(httpStatus.NOT_FOUND, 'Invoice not found or is deleted');
   }
 
-  // 1. Role-Based Guard: Cashiers CANNOT edit an APPROVED receipt
-  if (existing.status === ReceiptStatus.APPROVED && actor.role === UserRoleEnum.CASHIER) {
+  // 1. Role-Based Guard: Cashiers CANNOT edit an APPROVED invoice
+  if (existing.status === InvoiceStatus.APPROVED && actor.role === UserRoleEnum.CASHIER) {
     throw new AppError(
       httpStatus.FORBIDDEN,
-      'Approved receipts are locked and cannot be edited by cashiers. Please contact an administrator.',
+      'Approved invoices are locked and cannot be edited by cashiers. Please contact an administrator.',
     );
   }
 
   const itemsChanged =
     payload.items && Array.isArray(payload.items)
-      ? areReceiptItemsChanged(existing.items, payload.items)
+      ? areInvoiceItemsChanged(existing.items, payload.items)
       : false;
 
   if (itemsChanged) {
     const activeReturnCount = await prisma.returnInvoice.count({
-      where: { receiptId: id, isDeleted: false },
+      where: { invoiceId: id, isDeleted: false },
     });
     if (activeReturnCount > 0) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        'Cannot change receipt items while return invoices exist for this receipt. Delete or adjust returns first.',
+        'Cannot change invoice items while return invoices exist for this invoice. Delete or adjust returns first.',
       );
     }
   }
@@ -588,7 +588,7 @@ const updateReceipt = catchAsync(async (req, res) => {
           name: cust.name,
           countryCode: cust.countryCode,
           phoneNumber: cust.phoneNumber,
-          source: 'AUTO_RECEIPT_UPDATE',
+          source: 'AUTO_INVOICE_UPDATE',
         },
       });
     } else if (cust.isDeleted) {
@@ -617,7 +617,7 @@ const updateReceipt = catchAsync(async (req, res) => {
           name: cust.name,
           countryCode: cust.countryCode,
           phoneNumber: cust.phoneNumber,
-          source: 'AUTO_RECEIPT_UPDATE',
+          source: 'AUTO_INVOICE_UPDATE',
         },
       });
     }
@@ -626,7 +626,7 @@ const updateReceipt = catchAsync(async (req, res) => {
   }
 
   if (payload.items && Array.isArray(payload.items)) {
-    const duplicateProductError = getReceiptItemsUniquenessError(payload.items);
+    const duplicateProductError = getInvoiceItemsUniquenessError(payload.items);
     if (duplicateProductError) {
       throw new AppError(httpStatus.BAD_REQUEST, duplicateProductError);
     }
@@ -651,7 +651,7 @@ const updateReceipt = catchAsync(async (req, res) => {
       });
 
       // Recalculate new totals
-      const totals = calculateReceiptTotals(payload.items, finalDiscount, existing.paidAmount);
+      const totals = calculateInvoiceTotals(payload.items, finalDiscount, existing.paidAmount);
       subTotal = totals.subTotal;
       totalAmount = totals.totalAmount;
       dueAmount = totals.dueAmount;
@@ -679,16 +679,16 @@ const updateReceipt = catchAsync(async (req, res) => {
 
       await applyStockDeltaMap(tx, stockDeltaMap, warnings);
 
-      // Clean up any orphaned return invoice items belonging to deleted return invoices for this receipt
+      // Clean up any orphaned return invoice items belonging to deleted return invoices for this invoice
       await tx.returnInvoiceItem.deleteMany({
-        where: { receiptId: id },
+        where: { invoiceId: id },
       });
 
       // Delete old items and insert updated items
-      await tx.receiptItem.deleteMany({ where: { receiptId: id } });
-      await tx.receiptItem.createMany({
+      await tx.invoiceItem.deleteMany({ where: { invoiceId: id } });
+      await tx.invoiceItem.createMany({
         data: totals.calculatedItems.map(item => ({
-          receiptId: id,
+          invoiceId: id,
           productId: item.productId,
           productName: item.productName,
           unit: item.unit,
@@ -701,7 +701,7 @@ const updateReceipt = catchAsync(async (req, res) => {
       });
     } else if (payload.discount !== undefined || payload.items) {
       // Items didn't change (or only discount changed) -> recalculate totals cleanly
-      const totals = calculateReceiptTotals(
+      const totals = calculateInvoiceTotals(
         existing.items.map(it => ({
           productId: it.productId,
           productName: it.productName,
@@ -719,8 +719,8 @@ const updateReceipt = catchAsync(async (req, res) => {
       dueAmount = totals.dueAmount;
     }
 
-    // 3. Update receipt record
-    const updatedReceipt = await tx.receipt.update({
+    // 3. Update invoice record
+    const updatedInvoice = await tx.invoice.update({
       where: { id },
       data: {
         customerId: customerIdToUpdate || undefined,
@@ -742,17 +742,17 @@ const updateReceipt = catchAsync(async (req, res) => {
       },
     });
 
-    return updatedReceipt;
+    return updatedInvoice;
   });
 
   logActivity({
     userId: actor.id,
-    action: 'UPDATE_RECEIPT',
-    entityType: 'RECEIPT',
+    action: 'UPDATE_INVOICE',
+    entityType: 'INVOICE',
     entityId: id,
     req,
     details: {
-      receiptNumber: updatedResult.receiptNumber,
+      invoiceNumber: updatedResult.invoiceNumber,
       totalAmount: updatedResult.totalAmount,
       dueAmount: updatedResult.dueAmount,
       warningsCount: warnings.length,
@@ -761,40 +761,40 @@ const updateReceipt = catchAsync(async (req, res) => {
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
-    message: 'Receipt updated successfully',
+    message: 'Invoice updated successfully',
     data: {
-      receipt: updatedResult,
+      invoice: updatedResult,
       warnings,
     },
   });
 });
 
 /**
- * Delete receipt handler:
+ * Delete invoice handler:
  * - Admin/Superadmin: Immediate soft-delete and automatically restores inventory stock.
  * - Cashier: Submits delete request (isDeleteRequested: true) and notifies admins.
  */
-const deleteReceipt = catchAsync(async (req, res) => {
+const deleteInvoice = catchAsync(async (req, res) => {
   const { id } = req.params;
   const actor = req.user;
   const { reason } = req.body || {};
 
-  const receipt = await prisma.receipt.findUnique({
+  const invoice = await prisma.invoice.findUnique({
     where: { id },
     include: { items: true },
   });
 
-  if (!receipt || receipt.isDeleted) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Receipt not found');
+  if (!invoice || invoice.isDeleted) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Invoice not found');
   }
 
   const activeReturnCount = await prisma.returnInvoice.count({
-    where: { receiptId: id, isDeleted: false },
+    where: { invoiceId: id, isDeleted: false },
   });
   if (activeReturnCount > 0) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'Cannot delete this receipt while return invoices exist. Delete the return invoices first.',
+      'Cannot delete this invoice while return invoices exist. Delete the return invoices first.',
     );
   }
 
@@ -803,9 +803,9 @@ const deleteReceipt = catchAsync(async (req, res) => {
   if (isAdmin) {
     // Immediate soft delete by Admin with inventory restoration
     const result = await prisma.$transaction(async tx => {
-      await restoreStockForProductItems(tx, receipt.items, []);
+      await restoreStockForProductItems(tx, invoice.items, []);
 
-      return tx.receipt.update({
+      return tx.invoice.update({
         where: { id },
         data: {
           isDeleted: true,
@@ -817,28 +817,28 @@ const deleteReceipt = catchAsync(async (req, res) => {
 
     logActivity({
       userId: actor.id,
-      action: 'ADMIN_DELETE_RECEIPT',
-      entityType: 'RECEIPT',
+      action: 'ADMIN_DELETE_INVOICE',
+      entityType: 'INVOICE',
       entityId: id,
       req,
-      details: { receiptNumber: receipt.receiptNumber, totalAmount: receipt.totalAmount },
+      details: { invoiceNumber: invoice.invoiceNumber, totalAmount: invoice.totalAmount },
     });
 
     sendResponse(res, {
       statusCode: httpStatus.OK,
-      message: 'Receipt deleted successfully and product inventory has been restored',
+      message: 'Invoice deleted successfully and product inventory has been restored',
       data: result,
     });
   } else {
     // Cashier delete request -> Pending Admin Confirmation
-    if (receipt.isDeleteRequested) {
+    if (invoice.isDeleteRequested) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
         'Deletion request is already pending admin confirmation',
       );
     }
 
-    const result = await prisma.receipt.update({
+    const result = await prisma.invoice.update({
       where: { id },
       data: {
         isDeleteRequested: true,
@@ -851,24 +851,24 @@ const deleteReceipt = catchAsync(async (req, res) => {
 
     logActivity({
       userId: actor.id,
-      action: 'REQUEST_DELETE_RECEIPT',
-      entityType: 'RECEIPT',
+      action: 'REQUEST_DELETE_INVOICE',
+      entityType: 'INVOICE',
       entityId: id,
       req,
-      details: { receiptNumber: receipt.receiptNumber, reason },
+      details: { invoiceNumber: invoice.invoiceNumber, reason },
     });
 
     notifyAdmins({
-      title: 'Receipt Deletion Requested',
-      message: `${actor.name || 'Cashier'} requested deletion of Receipt ${receipt.receiptNumber}.`,
+      title: 'Invoice Deletion Requested',
+      message: `${actor.name || 'Cashier'} requested deletion of Invoice ${invoice.invoiceNumber}.`,
       type: NotificationType.WARNING,
-      link: `/receipts/${id}`,
+      link: `/invoices/${id}`,
       req,
     });
 
     sendResponse(res, {
       statusCode: httpStatus.OK,
-      message: 'Receipt deletion request submitted to admin for confirmation',
+      message: 'Invoice deletion request submitted to admin for confirmation',
       data: result,
     });
   }
@@ -877,33 +877,33 @@ const deleteReceipt = catchAsync(async (req, res) => {
 /**
  * Confirm delete request (Admin only) and restore inventory stock
  */
-const confirmDeleteReceipt = catchAsync(async (req, res) => {
+const confirmDeleteInvoice = catchAsync(async (req, res) => {
   const { id } = req.params;
   const actor = req.user;
 
-  const receipt = await prisma.receipt.findUnique({
+  const invoice = await prisma.invoice.findUnique({
     where: { id },
     include: { items: true },
   });
 
-  if (!receipt || receipt.isDeleted) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Receipt not found');
+  if (!invoice || invoice.isDeleted) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Invoice not found');
   }
 
   const activeReturnCount = await prisma.returnInvoice.count({
-    where: { receiptId: id, isDeleted: false },
+    where: { invoiceId: id, isDeleted: false },
   });
   if (activeReturnCount > 0) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'Cannot delete this receipt while return invoices exist. Delete the return invoices first.',
+      'Cannot delete this invoice while return invoices exist. Delete the return invoices first.',
     );
   }
 
   const result = await prisma.$transaction(async tx => {
-    await restoreStockForProductItems(tx, receipt.items, []);
+    await restoreStockForProductItems(tx, invoice.items, []);
 
-    return tx.receipt.update({
+    return tx.invoice.update({
       where: { id },
       data: {
         isDeleted: true,
@@ -915,27 +915,27 @@ const confirmDeleteReceipt = catchAsync(async (req, res) => {
 
   logActivity({
     userId: actor.id,
-    action: 'ADMIN_CONFIRM_DELETE_RECEIPT',
-    entityType: 'RECEIPT',
+    action: 'ADMIN_CONFIRM_DELETE_INVOICE',
+    entityType: 'INVOICE',
     entityId: id,
     req,
-    details: { receiptNumber: receipt.receiptNumber },
+    details: { invoiceNumber: invoice.invoiceNumber },
   });
 
-  if (receipt.deleteRequestedById) {
+  if (invoice.deleteRequestedById) {
     sendNotification({
-      userId: receipt.deleteRequestedById,
-      title: 'Receipt Deletion Confirmed',
-      message: `Admin confirmed deletion for Receipt ${receipt.receiptNumber}.`,
+      userId: invoice.deleteRequestedById,
+      title: 'Invoice Deletion Confirmed',
+      message: `Admin confirmed deletion for Invoice ${invoice.invoiceNumber}.`,
       type: NotificationType.SUCCESS,
-      link: `/receipts`,
+      link: `/invoices`,
       req,
     });
   }
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
-    message: 'Receipt deletion confirmed and inventory stock restored',
+    message: 'Invoice deletion confirmed and inventory stock restored',
     data: result,
   });
 });
@@ -943,19 +943,19 @@ const confirmDeleteReceipt = catchAsync(async (req, res) => {
 /**
  * Reject delete request (Admin only)
  */
-const rejectDeleteReceipt = catchAsync(async (req, res) => {
+const rejectDeleteInvoice = catchAsync(async (req, res) => {
   const { id } = req.params;
   const actor = req.user;
 
-  const receipt = await prisma.receipt.findUnique({
+  const invoice = await prisma.invoice.findUnique({
     where: { id },
   });
 
-  if (!receipt || receipt.isDeleted) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Receipt not found');
+  if (!invoice || invoice.isDeleted) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Invoice not found');
   }
 
-  const result = await prisma.receipt.update({
+  const result = await prisma.invoice.update({
     where: { id },
     data: {
       isDeleteRequested: false,
@@ -968,53 +968,53 @@ const rejectDeleteReceipt = catchAsync(async (req, res) => {
 
   logActivity({
     userId: actor.id,
-    action: 'ADMIN_REJECT_DELETE_RECEIPT',
-    entityType: 'RECEIPT',
+    action: 'ADMIN_REJECT_DELETE_INVOICE',
+    entityType: 'INVOICE',
     entityId: id,
     req,
-    details: { receiptNumber: receipt.receiptNumber },
+    details: { invoiceNumber: invoice.invoiceNumber },
   });
 
-  if (receipt.deleteRequestedById) {
+  if (invoice.deleteRequestedById) {
     sendNotification({
-      userId: receipt.deleteRequestedById,
-      title: 'Receipt Deletion Rejected',
-      message: `Admin rejected deletion request for Receipt ${receipt.receiptNumber}.`,
+      userId: invoice.deleteRequestedById,
+      title: 'Invoice Deletion Rejected',
+      message: `Admin rejected deletion request for Invoice ${invoice.invoiceNumber}.`,
       type: NotificationType.WARNING,
-      link: `/receipts/${id}`,
+      link: `/invoices/${id}`,
       req,
     });
   }
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
-    message: 'Receipt deletion request rejected',
+    message: 'Invoice deletion request rejected',
     data: result,
   });
 });
 
 /**
- * Restore / Undo soft-deleted receipt (Admin only) and re-deduct inventory
+ * Restore / Undo soft-deleted invoice (Admin only) and re-deduct inventory
  */
-const restoreReceipt = catchAsync(async (req, res) => {
+const restoreInvoice = catchAsync(async (req, res) => {
   const { id } = req.params;
   const actor = req.user;
 
-  const receipt = await prisma.receipt.findUnique({
+  const invoice = await prisma.invoice.findUnique({
     where: { id },
     include: { items: true },
   });
 
-  if (!receipt || !receipt.isDeleted) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Receipt is not in deleted state');
+  if (!invoice || !invoice.isDeleted) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Invoice is not in deleted state');
   }
 
   const warnings: string[] = [];
 
   const result = await prisma.$transaction(async tx => {
-    await deductStockForProductItems(tx, receipt.items, warnings);
+    await deductStockForProductItems(tx, invoice.items, warnings);
 
-    return tx.receipt.update({
+    return tx.invoice.update({
       where: { id },
       data: {
         isDeleted: false,
@@ -1029,18 +1029,18 @@ const restoreReceipt = catchAsync(async (req, res) => {
 
   logActivity({
     userId: actor.id,
-    action: 'ADMIN_RESTORE_RECEIPT',
-    entityType: 'RECEIPT',
+    action: 'ADMIN_RESTORE_INVOICE',
+    entityType: 'INVOICE',
     entityId: id,
     req,
-    details: { receiptNumber: receipt.receiptNumber },
+    details: { invoiceNumber: invoice.invoiceNumber },
   });
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
-    message: 'Receipt restored successfully',
+    message: 'Invoice restored successfully',
     data: {
-      receipt: result,
+      invoice: result,
       warnings,
     },
   });
@@ -1054,32 +1054,32 @@ const addPayment = catchAsync(async (req, res) => {
   const actor = req.user;
   const { amount, note, date } = req.body;
 
-  const receipt = await prisma.receipt.findUnique({
+  const invoice = await prisma.invoice.findUnique({
     where: { id },
   });
 
-  if (!receipt || receipt.isDeleted) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Receipt not found or is deleted');
+  if (!invoice || invoice.isDeleted) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Invoice not found or is deleted');
   }
 
-  if (receipt.dueAmount <= 0) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'This receipt is already fully paid');
+  if (invoice.dueAmount <= 0) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'This invoice is already fully paid');
   }
 
   const paymentAmount = roundToTwo(amount);
 
-  if (paymentAmount > receipt.dueAmount) {
+  if (paymentAmount > invoice.dueAmount) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      `Payment amount (৳${paymentAmount}) exceeds remaining due amount (৳${receipt.dueAmount})`,
+      `Payment amount (৳${paymentAmount}) exceeds remaining due amount (৳${invoice.dueAmount})`,
     );
   }
 
   const result = await prisma.$transaction(async tx => {
-    // 1. Create ReceiptPayment entry with timestamp
-    const payment = await tx.receiptPayment.create({
+    // 1. Create InvoicePayment entry with timestamp
+    const payment = await tx.invoicePayment.create({
       data: {
-        receiptId: id,
+        invoiceId: id,
         amount: paymentAmount,
         note: note || null,
         createdById: actor.id,
@@ -1095,9 +1095,9 @@ const addPayment = catchAsync(async (req, res) => {
     // Create CustomerTransaction for Payment
     await tx.customerTransaction.create({
       data: {
-        customerId: receipt.customerId,
+        customerId: invoice.customerId,
         type: CustomerTransactionType.PAYMENT,
-        receiptId: receipt.id,
+        invoiceId: invoice.id,
         paymentId: payment.id,
         note: note || null,
         createdById: actor.id,
@@ -1105,11 +1105,11 @@ const addPayment = catchAsync(async (req, res) => {
       },
     });
 
-    // 2. Update Receipt totals
-    const newPaidAmount = roundToTwo(receipt.paidAmount + paymentAmount);
-    const newDueAmount = roundToTwo(Math.max(0, receipt.totalAmount - newPaidAmount));
+    // 2. Update Invoice totals
+    const newPaidAmount = roundToTwo(invoice.paidAmount + paymentAmount);
+    const newDueAmount = roundToTwo(Math.max(0, invoice.totalAmount - newPaidAmount));
 
-    const updatedReceipt = await tx.receipt.update({
+    const updatedInvoice = await tx.invoice.update({
       where: { id },
       data: {
         paidAmount: newPaidAmount,
@@ -1139,29 +1139,29 @@ const addPayment = catchAsync(async (req, res) => {
       },
     });
 
-    return { payment, receipt: updatedReceipt };
+    return { payment, invoice: updatedInvoice };
   });
 
   logActivity({
     userId: actor.id,
-    action: 'ADD_RECEIPT_PAYMENT',
-    entityType: 'RECEIPT_PAYMENT',
+    action: 'ADD_INVOICE_PAYMENT',
+    entityType: 'INVOICE_PAYMENT',
     entityId: result.payment.id,
     req,
     details: {
-      receiptId: id,
-      receiptNumber: receipt.receiptNumber,
+      invoiceId: id,
+      invoiceNumber: invoice.invoiceNumber,
       amount: paymentAmount,
-      remainingDue: result.receipt.dueAmount,
+      remainingDue: result.invoice.dueAmount,
     },
   });
 
   sendNotification({
     userId: actor.id,
     title: 'Payment Received',
-    message: `Payment of ৳${paymentAmount} recorded for Receipt ${receipt.receiptNumber}. Remaining due: ৳${result.receipt.dueAmount}.`,
+    message: `Payment of ৳${paymentAmount} recorded for Invoice ${invoice.invoiceNumber}. Remaining due: ৳${result.invoice.dueAmount}.`,
     type: NotificationType.SUCCESS,
-    link: `/receipts/${id}`,
+    link: `/invoices/${id}`,
     req,
   });
 
@@ -1173,46 +1173,46 @@ const addPayment = catchAsync(async (req, res) => {
 });
 
 /**
- * Update an existing payment on a receipt
+ * Update an existing payment on an invoice
  */
 const updatePayment = catchAsync(async (req, res) => {
   const { id, paymentId } = req.params;
   const actor = req.user;
   const { amount, note, date } = req.body;
 
-  const receipt = await prisma.receipt.findUnique({
+  const invoice = await prisma.invoice.findUnique({
     where: { id },
   });
 
-  if (!receipt || receipt.isDeleted) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Receipt not found or is deleted');
+  if (!invoice || invoice.isDeleted) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Invoice not found or is deleted');
   }
 
-  const existingPayment = await prisma.receiptPayment.findUnique({
+  const existingPayment = await prisma.invoicePayment.findUnique({
     where: { id: paymentId },
   });
 
-  if (!existingPayment || existingPayment.receiptId !== id) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Payment record not found for this receipt');
+  if (!existingPayment || existingPayment.invoiceId !== id) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Payment record not found for this invoice');
   }
 
-  if (existingPayment.status === ReceiptStatus.APPROVED) {
+  if (existingPayment.status === InvoiceStatus.APPROVED) {
     throw new AppError(httpStatus.BAD_REQUEST, 'Approved payments cannot be edited');
   }
 
   const newAmount = amount !== undefined ? roundToTwo(amount) : existingPayment.amount;
   const diff = roundToTwo(newAmount - existingPayment.amount);
 
-  if (diff > receipt.dueAmount) {
+  if (diff > invoice.dueAmount) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      `Payment increase of ৳${diff} exceeds remaining due amount (৳${receipt.dueAmount})`,
+      `Payment increase of ৳${diff} exceeds remaining due amount (৳${invoice.dueAmount})`,
     );
   }
 
   const result = await prisma.$transaction(async tx => {
-    // 1. Update ReceiptPayment
-    const updatedPayment = await tx.receiptPayment.update({
+    // 1. Update InvoicePayment
+    const updatedPayment = await tx.invoicePayment.update({
       where: { id: paymentId },
       data: {
         amount: newAmount,
@@ -1238,11 +1238,11 @@ const updatePayment = catchAsync(async (req, res) => {
       },
     });
 
-    // 2. Update Receipt totals
-    const newPaidAmount = roundToTwo(receipt.paidAmount + diff);
-    const newDueAmount = roundToTwo(Math.max(0, receipt.totalAmount - newPaidAmount));
+    // 2. Update Invoice totals
+    const newPaidAmount = roundToTwo(invoice.paidAmount + diff);
+    const newDueAmount = roundToTwo(Math.max(0, invoice.totalAmount - newPaidAmount));
 
-    const updatedReceipt = await tx.receipt.update({
+    const updatedInvoice = await tx.invoice.update({
       where: { id },
       data: {
         paidAmount: newPaidAmount,
@@ -1272,22 +1272,22 @@ const updatePayment = catchAsync(async (req, res) => {
       },
     });
 
-    return { payment: updatedPayment, receipt: updatedReceipt };
+    return { payment: updatedPayment, invoice: updatedInvoice };
   });
 
   logActivity({
     userId: actor.id,
-    action: 'UPDATE_RECEIPT_PAYMENT',
-    entityType: 'RECEIPT_PAYMENT',
+    action: 'UPDATE_INVOICE_PAYMENT',
+    entityType: 'INVOICE_PAYMENT',
     entityId: paymentId,
     req,
     details: {
-      receiptId: id,
-      receiptNumber: receipt.receiptNumber,
+      invoiceId: id,
+      invoiceNumber: invoice.invoiceNumber,
       oldAmount: existingPayment.amount,
       newAmount,
       diff,
-      remainingDue: result.receipt.dueAmount,
+      remainingDue: result.invoice.dueAmount,
     },
   });
 
@@ -1299,35 +1299,35 @@ const updatePayment = catchAsync(async (req, res) => {
 });
 
 /**
- * Delete an existing payment on a receipt and restore due amount
+ * Delete an existing payment on an invoice and restore due amount
  */
 const deletePayment = catchAsync(async (req, res) => {
   const { id, paymentId } = req.params;
   const actor = req.user;
 
-  const receipt = await prisma.receipt.findUnique({
+  const invoice = await prisma.invoice.findUnique({
     where: { id },
   });
 
-  if (!receipt || receipt.isDeleted) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Receipt not found or is deleted');
+  if (!invoice || invoice.isDeleted) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Invoice not found or is deleted');
   }
 
-  const existingPayment = await prisma.receiptPayment.findUnique({
+  const existingPayment = await prisma.invoicePayment.findUnique({
     where: { id: paymentId },
   });
 
-  if (!existingPayment || existingPayment.receiptId !== id) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Payment record not found for this receipt');
+  if (!existingPayment || existingPayment.invoiceId !== id) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Payment record not found for this invoice');
   }
 
-  if (existingPayment.status === ReceiptStatus.APPROVED) {
+  if (existingPayment.status === InvoiceStatus.APPROVED) {
     throw new AppError(httpStatus.BAD_REQUEST, 'Approved payments cannot be deleted');
   }
 
   const result = await prisma.$transaction(async tx => {
     // 1. Delete payment
-    await tx.receiptPayment.delete({
+    await tx.invoicePayment.delete({
       where: { id: paymentId },
     });
 
@@ -1337,10 +1337,10 @@ const deletePayment = catchAsync(async (req, res) => {
     });
 
     // 2. Revert paid and due amounts
-    const newPaidAmount = roundToTwo(Math.max(0, receipt.paidAmount - existingPayment.amount));
-    const newDueAmount = roundToTwo(Math.max(0, receipt.totalAmount - newPaidAmount));
+    const newPaidAmount = roundToTwo(Math.max(0, invoice.paidAmount - existingPayment.amount));
+    const newDueAmount = roundToTwo(Math.max(0, invoice.totalAmount - newPaidAmount));
 
-    const updatedReceipt = await tx.receipt.update({
+    const updatedInvoice = await tx.invoice.update({
       where: { id },
       data: {
         paidAmount: newPaidAmount,
@@ -1370,20 +1370,20 @@ const deletePayment = catchAsync(async (req, res) => {
       },
     });
 
-    return { deletedPaymentId: paymentId, receipt: updatedReceipt };
+    return { deletedPaymentId: paymentId, invoice: updatedInvoice };
   });
 
   logActivity({
     userId: actor.id,
-    action: 'DELETE_RECEIPT_PAYMENT',
-    entityType: 'RECEIPT_PAYMENT',
+    action: 'DELETE_INVOICE_PAYMENT',
+    entityType: 'INVOICE_PAYMENT',
     entityId: paymentId,
     req,
     details: {
-      receiptId: id,
-      receiptNumber: receipt.receiptNumber,
+      invoiceId: id,
+      invoiceNumber: invoice.invoiceNumber,
       amount: existingPayment.amount,
-      remainingDue: result.receipt.dueAmount,
+      remainingDue: result.invoice.dueAmount,
     },
   });
 
@@ -1406,30 +1406,30 @@ const approvePayment = catchAsync(async (req, res) => {
     throw new AppError(httpStatus.FORBIDDEN, 'Only Admin and Super Admin can approve payments');
   }
 
-  const receipt = await prisma.receipt.findUnique({
+  const invoice = await prisma.invoice.findUnique({
     where: { id },
   });
 
-  if (!receipt || receipt.isDeleted) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Receipt not found or is deleted');
+  if (!invoice || invoice.isDeleted) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Invoice not found or is deleted');
   }
 
-  const existingPayment = await prisma.receiptPayment.findUnique({
+  const existingPayment = await prisma.invoicePayment.findUnique({
     where: { id: paymentId },
   });
 
-  if (!existingPayment || existingPayment.receiptId !== id) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Payment record not found for this receipt');
+  if (!existingPayment || existingPayment.invoiceId !== id) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Payment record not found for this invoice');
   }
 
-  if (existingPayment.status === ReceiptStatus.APPROVED) {
+  if (existingPayment.status === InvoiceStatus.APPROVED) {
     throw new AppError(httpStatus.BAD_REQUEST, 'Payment is already approved');
   }
 
-  const updatedPayment = await prisma.receiptPayment.update({
+  const updatedPayment = await prisma.invoicePayment.update({
     where: { id: paymentId },
     data: {
-      status: ReceiptStatus.APPROVED,
+      status: InvoiceStatus.APPROVED,
       approvedById: actor.id,
       approvedAt: new Date(),
     },
@@ -1443,7 +1443,7 @@ const approvePayment = catchAsync(async (req, res) => {
     },
   });
 
-  const updatedReceipt = await prisma.receipt.findUnique({
+  const updatedInvoice = await prisma.invoice.findUnique({
     where: { id },
     include: {
       customer: true,
@@ -1470,13 +1470,13 @@ const approvePayment = catchAsync(async (req, res) => {
 
   logActivity({
     userId: actor.id,
-    action: 'APPROVE_RECEIPT_PAYMENT',
-    entityType: 'RECEIPT_PAYMENT',
+    action: 'APPROVE_INVOICE_PAYMENT',
+    entityType: 'INVOICE_PAYMENT',
     entityId: paymentId,
     req,
     details: {
-      receiptId: id,
-      receiptNumber: receipt.receiptNumber,
+      invoiceId: id,
+      invoiceNumber: invoice.invoiceNumber,
       amount: existingPayment.amount,
     },
   });
@@ -1485,9 +1485,9 @@ const approvePayment = catchAsync(async (req, res) => {
     sendNotification({
       userId: existingPayment.createdById,
       title: 'Payment Approved',
-      message: `Your payment of ৳${existingPayment.amount} on Receipt ${receipt.receiptNumber} was approved by ${actor.name}.`,
+      message: `Your payment of ৳${existingPayment.amount} on Invoice ${invoice.invoiceNumber} was approved by ${actor.name}.`,
       type: NotificationType.SUCCESS,
-      link: `/receipts/${id}`,
+      link: `/invoices/${id}`,
       req,
     });
   }
@@ -1495,27 +1495,27 @@ const approvePayment = catchAsync(async (req, res) => {
   sendResponse(res, {
     statusCode: httpStatus.OK,
     message: 'Payment approved successfully',
-    data: { payment: updatedPayment, receipt: updatedReceipt },
+    data: { payment: updatedPayment, invoice: updatedInvoice },
   });
 });
 
 /**
- * Update receipt status (Admin/Superadmin only: Approve or Reject)
+ * Update invoice status (Admin/Superadmin only: Approve or Reject)
  */
-const updateReceiptStatus = catchAsync(async (req, res) => {
+const updateInvoiceStatus = catchAsync(async (req, res) => {
   const { id } = req.params;
   const actor = req.user;
   const { status } = req.body;
 
-  const receipt = await prisma.receipt.findUnique({
+  const invoice = await prisma.invoice.findUnique({
     where: { id },
   });
 
-  if (!receipt || receipt.isDeleted) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Receipt not found or is deleted');
+  if (!invoice || invoice.isDeleted) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Invoice not found or is deleted');
   }
 
-  const updatedReceipt = await prisma.receipt.update({
+  const updatedInvoice = await prisma.invoice.update({
     where: { id },
     data: {
       status,
@@ -1538,45 +1538,45 @@ const updateReceiptStatus = catchAsync(async (req, res) => {
 
   logActivity({
     userId: actor.id,
-    action: status === ReceiptStatus.APPROVED ? 'APPROVE_RECEIPT' : 'REJECT_RECEIPT',
-    entityType: 'RECEIPT',
+    action: status === InvoiceStatus.APPROVED ? 'APPROVE_INVOICE' : 'REJECT_INVOICE',
+    entityType: 'INVOICE',
     entityId: id,
     req,
     details: {
-      receiptNumber: receipt.receiptNumber,
-      oldStatus: receipt.status,
+      invoiceNumber: invoice.invoiceNumber,
+      oldStatus: invoice.status,
       newStatus: status,
     },
   });
 
-  if (receipt.createdById && receipt.createdById !== actor.id) {
+  if (invoice.createdById && invoice.createdById !== actor.id) {
     sendNotification({
-      userId: receipt.createdById,
-      title: `Receipt ${status}`,
-      message: `Receipt ${receipt.receiptNumber} has been ${status.toLowerCase()} by admin.`,
-      type: status === ReceiptStatus.APPROVED ? NotificationType.SUCCESS : NotificationType.WARNING,
-      link: `/receipts/${id}`,
+      userId: invoice.createdById,
+      title: `Invoice ${status}`,
+      message: `Invoice ${invoice.invoiceNumber} has been ${status.toLowerCase()} by admin.`,
+      type: status === InvoiceStatus.APPROVED ? NotificationType.SUCCESS : NotificationType.WARNING,
+      link: `/invoices/${id}`,
       req,
     });
   }
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
-    message: `Receipt status updated to ${status}`,
-    data: updatedReceipt,
+    message: `Invoice status updated to ${status}`,
+    data: updatedInvoice,
   });
 });
 
-export const ReceiptServices = {
-  createReceipt,
-  getAllReceipts,
-  getReceiptById,
-  updateReceipt,
-  updateReceiptStatus,
-  deleteReceipt,
-  confirmDeleteReceipt,
-  rejectDeleteReceipt,
-  restoreReceipt,
+export const InvoiceServices = {
+  createInvoice,
+  getAllInvoices,
+  getInvoiceById,
+  updateInvoice,
+  updateInvoiceStatus,
+  deleteInvoice,
+  confirmDeleteInvoice,
+  rejectDeleteInvoice,
+  restoreInvoice,
   addPayment,
   updatePayment,
   deletePayment,
