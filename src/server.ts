@@ -4,10 +4,12 @@ import seedSuperAdmin from './app/DB';
 import config from './config';
 import { customConsole } from './app/utils/customConsole';
 import { cleanupExpiredSessions } from './app/utils/sessionTtl';
+import { initMaintenanceCache } from './app/modules/Maintenance/maintenance.service';
 
 const port = config.port || 5000;
 
 async function main() {
+  await initMaintenanceCache();
   const server: HTTPServer = createServer(app).listen(port, () => {
     customConsole(port, config.project_name || 'Server');
     seedSuperAdmin();

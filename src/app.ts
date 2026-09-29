@@ -8,6 +8,8 @@ import path from 'path';
 import { html } from './htmldesign';
 import { firebaseLoginHtml } from './firebase-login.html';
 import config from './config';
+import maintenanceGuard from './app/middlewares/maintenanceGuard';
+import { initMaintenanceCache } from './app/modules/Maintenance/maintenance.service';
 
 const rawClientUrls = config.base_url_client
   ? config.base_url_client.split(',').map((url) => url.trim())
@@ -66,7 +68,10 @@ app.get('/firebase-login', (req: Request, res: Response) => {
   res.send(firebaseLoginHtml);
 });
 
-app.use('/api/v1', router);
+// Initialize maintenance state in-memory cache asynchronously
+initMaintenanceCache().catch((err) => console.error('[Maintenance Cache Startup Error]:', err));
+
+app.use('/api/v1', maintenanceGuard, router);
 
 // Static asset serving for device storage
 app.use('/assets', express.static(path.join(process.cwd(), 'assets')));

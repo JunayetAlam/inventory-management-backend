@@ -1,0 +1,16 @@
+model SystemMaintenance {
+  id               String    @id @default(uuid())
+  isActive         Boolean   @default(false)
+  title            String    @default("System Under Maintenance")
+  message          String    @default("We are currently performing scheduled maintenance to improve our service. We apologize for any inconvenience.")
+  reason           String?
+  estimatedEndTime DateTime?
+  contactEmail     String?
+  contactPhone     String?
+  supportNotice    String?
+  lastToggledAt    DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@map("system_maintenances")
+}

@@ -12,6 +12,7 @@ import { InvoiceRouters } from '../modules/Invoice/invoice.routes';
 import { ReturnInvoiceRouters } from '../modules/ReturnInvoice/returnInvoice.routes';
 import { ShopRouters } from '../modules/Shop/shop.routes';
 import { StatsRouters } from '../modules/Stats/stats.routes';
+import { MaintenanceRouters } from '../modules/Maintenance/maintenance.routes';
 
 const router = express.Router();
 
@@ -63,6 +64,10 @@ const moduleRoutes = [
   {
     path: '/activity-logs',
     route: ActivityLogRouters,
+  },
+  {
+    path: '/maintenance',
+    route: MaintenanceRouters,
   },
 ];
 
