@@ -18,7 +18,10 @@ export const sanitizeModelName = (model?: string): string => {
   if (!model || typeof model !== 'string') {
     return 'general';
   }
-  const sanitized = model.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  const sanitized = model
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '');
   return sanitized || 'general';
 };
 
@@ -28,7 +31,7 @@ export const sanitizeModelName = (model?: string): string => {
 const getBaseServerUrl = (customBaseUrl?: string): string => {
   if (customBaseUrl) return customBaseUrl.replace(/\/+$/, '');
   if (config.base_url_server) return config.base_url_server.replace(/\/+$/, '');
-  return `http://localhost:${config.port || 5161}`;
+  return `http://localhost:${config.port || 5171}`;
 };
 
 /**
@@ -102,7 +105,9 @@ export const uploadMultipleToLocalStorage = async (
 /**
  * Safely delete a file from local storage given its URL or relative path
  */
-export const deleteFromLocalStorage = async (fileUrlOrPath: string): Promise<boolean> => {
+export const deleteFromLocalStorage = async (
+  fileUrlOrPath: string,
+): Promise<boolean> => {
   try {
     if (!fileUrlOrPath || typeof fileUrlOrPath !== 'string') {
       return false;
@@ -125,7 +130,9 @@ export const deleteFromLocalStorage = async (fileUrlOrPath: string): Promise<boo
     // Path traversal check: resolved path must be inside ASSETS_ROOT_DIR
     const normalizedAssetsRoot = path.resolve(ASSETS_ROOT_DIR);
     if (!resolvedPath.startsWith(normalizedAssetsRoot)) {
-      console.warn(`Attempted unsafe file deletion outside assets root: ${fileUrlOrPath}`);
+      console.warn(
+        `Attempted unsafe file deletion outside assets root: ${fileUrlOrPath}`,
+      );
       return false;
     }
 

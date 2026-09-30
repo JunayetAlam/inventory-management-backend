@@ -12,19 +12,21 @@ import maintenanceGuard from './app/middlewares/maintenanceGuard';
 import { initMaintenanceCache } from './app/modules/Maintenance/maintenance.service';
 
 const rawClientUrls = config.base_url_client
-  ? config.base_url_client.split(',').map((url) => url.trim())
+  ? config.base_url_client.split(',').map(url => url.trim())
   : [];
 
-const allowedOrigins = new Set([
-  ...rawClientUrls,
-  ...rawClientUrls.map((url) => url.replace(/\/+$/, '')),
-  'https://sanowarelectric.store',
-  'https://www.sanowarelectric.store',
-  'http://localhost:3000',
-  'http://localhost:3161',
-  'http://127.0.0.1:3000',
-  'http://127.0.0.1:3161',
-].filter(Boolean));
+const allowedOrigins = new Set(
+  [
+    ...rawClientUrls,
+    ...rawClientUrls.map(url => url.replace(/\/+$/, '')),
+    'https://sanowarelectric.store',
+    'https://www.sanowarelectric.store',
+    'http://localhost:3000',
+    'http://localhost:3171',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:3171',
+  ].filter(Boolean),
+);
 
 const app: Application = express();
 
@@ -69,7 +71,9 @@ app.get('/firebase-login', (req: Request, res: Response) => {
 });
 
 // Initialize maintenance state in-memory cache asynchronously
-initMaintenanceCache().catch((err) => console.error('[Maintenance Cache Startup Error]:', err));
+initMaintenanceCache().catch(err =>
+  console.error('[Maintenance Cache Startup Error]:', err),
+);
 
 app.use('/api/v1', maintenanceGuard, router);
 
